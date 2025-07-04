@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestNewFileStorage(t *testing.T) {
@@ -139,6 +140,51 @@ func TestSanitizeFilename(t *testing.T) {
 			input:    "folder\\file.txt",
 			expected: "folder_file.txt",
 		},
+		{
+			name:     "filename with invalid UTF-8 sequences",
+			input:    "Bestelleingangsbest\xE4tigung.pdf", // Invalid UTF-8
+			expected: "Bestelleingangsbest_tigung.pdf",
+		},
+		{
+			name:     "filename with mixed encoding issues",
+			input:    "file\xFF\xFEname\x00.txt", // Invalid UTF-8 and null byte
+			expected: "file__name_.txt",
+		},
+		{
+			name:     "filename with control characters",
+			input:    "file\nname\r.txt",
+			expected: "file_name_.txt",
+		},
+		{
+			name:     "filename with Unicode control chars",
+			input:    "file\u0001\u001Fname.txt", // Control characters
+			expected: "file__name.txt",
+		},
+		{
+			name:     "empty filename",
+			input:    "",
+			expected: "untitled",
+		},
+		{
+			name:     "filename with only spaces and dots",
+			input:    "  ...  ",
+			expected: "untitled",
+		},
+		{
+			name:     "filename with BOM",
+			input:    "\uFEFFdocument.pdf",
+			expected: "document.pdf",
+		},
+		{
+			name:     "German umlaut filename (valid UTF-8)",
+			input:    "Bestelleingangsbestätigung.pdf",
+			expected: "Bestelleingangsbestätigung.pdf",
+		},
+		{
+			name:     "filename becomes empty after sanitization",
+			input:    "\x00\x01\x02",
+			expected: "untitled",
+		},
 	}
 
 	for _, tt := range tests {
@@ -149,6 +195,10 @@ func TestSanitizeFilename(t *testing.T) {
 			}
 			if len(result) > 255 {
 				t.Errorf("sanitizeFilename() result too long: %d chars", len(result))
+			}
+			// Ensure result is valid UTF-8
+			if !utf8.ValidString(result) {
+				t.Errorf("sanitizeFilename() result is not valid UTF-8: %q", result)
 			}
 		})
 	}
@@ -486,6 +536,11 @@ func TestExtractSenderName(t *testing.T) {
 			from:     "Bad/Name*Test <user@example.com>",
 			expected: "Bad_Name_Test",
 		},
+		{
+			name:     "name with encoding issues",
+			from:     "Max M\xFCller <max@example.com>", // Invalid UTF-8
+			expected: "Max_M_ller",
+		},
 	}
 
 	for _, tt := range tests {
@@ -493,6 +548,99 @@ func TestExtractSenderName(t *testing.T) {
 			result := extractSenderName(tt.from)
 			if result != tt.expected {
 				t.Errorf("extractSenderName() = %q, want %q", result, tt.expected)
+			}
+			// Ensure result is valid UTF-8
+			if !utf8.ValidString(result) {
+				t.Errorf("extractSenderName() result is not valid UTF-8: %q", result)
+			}
+		})
+	}
+}
+
+func TestSanitizeUTF8(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "valid UTF-8",
+			input:    "Hello, 世界! 🌍",
+			expected: "Hello, 世界! 🌍",
+		},
+		{
+			name:     "invalid UTF-8 byte sequences",
+			input:    "Hello\xFF\xFEWorld",
+			expected: "Hello__World",
+		},
+		{
+			name:     "mixed valid and invalid",
+			input:    "Café\x80\x81Münch\xFFen",
+			expected: "Café__Münch_en",
+		},
+		{
+			name:     "German umlaut with invalid bytes",
+			input:    "M\xFCller", // Invalid UTF-8 for ü
+			expected: "M_ller",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeUTF8(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeUTF8() = %q, want %q", result, tt.expected)
+			}
+			if !utf8.ValidString(result) {
+				t.Errorf("sanitizeUTF8() result is not valid UTF-8: %q", result)
+			}
+		})
+	}
+}
+
+func TestSanitizeUnicodeChars(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "normal text",
+			input:    "Hello World",
+			expected: "Hello World",
+		},
+		{
+			name:     "control characters",
+			input:    "Hello\x01\x02World\x1F",
+			expected: "Hello__World_",
+		},
+		{
+			name:     "tab character preserved",
+			input:    "Hello\tWorld",
+			expected: "Hello\tWorld",
+		},
+		{
+			name:     "BOM removed",
+			input:    "\uFEFFHello",
+			expected: "Hello",
+		},
+		{
+			name:     "mixed Unicode categories",
+			input:    "Normal\u200Btext\u2060here",
+			expected: "Normaltexthere",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeUnicodeChars(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeUnicodeChars() = %q, want %q", result, tt.expected)
 			}
 		})
 	}
