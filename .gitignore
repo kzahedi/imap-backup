@@ -42,3 +42,12 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
+
+# SonarQube analysis files
+.scannerwork/
+coverage.out
+coverage.html
+golangci-lint-report.xml
+govet-report.out
+gosec-report.json
+sonar-report.json

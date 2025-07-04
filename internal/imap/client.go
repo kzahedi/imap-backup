@@ -374,8 +374,8 @@ func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
 				parsedMsg.Body = body
 			}
 			
-			// Log charset info for debugging
-			if charset != "" && charset != "utf-8" {
+			// Log charset info for debugging (only for non-UTF-8 charsets)
+			if charset != "" && charset != "utf-8" && charset != "UTF-8" {
 				log.Printf("Decoded body from charset %s for message UID %d", charset, msg.Uid)
 			}
 
