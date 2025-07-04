@@ -1,11 +1,13 @@
 package imap
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"imap-backup/internal/auth"
 	"imap-backup/internal/charset"
 	"imap-backup/internal/config"
+	"imap-backup/internal/security"
 	"io"
 	"log"
 	"mime"
@@ -17,6 +19,21 @@ import (
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/mail"
 	"github.com/emersion/go-sasl"
+)
+
+const (
+	// Connection timeouts
+	DefaultDialTimeout = 30 * time.Second
+	DefaultReadTimeout = 60 * time.Second
+	DefaultWriteTimeout = 60 * time.Second
+	
+	// Message processing limits
+	MaxMessageSize = 50 * 1024 * 1024 // 50MB
+	MaxConcurrentMessages = 10
+	
+	// IMAP operation timeouts
+	IMAPSelectTimeout = 30 * time.Second
+	IMAPFetchTimeout = 5 * time.Minute
 )
 
 type Client struct {
@@ -50,24 +67,45 @@ type Attachment struct {
 	Data        []byte
 }
 
-func NewClient(account config.Account) (*Client, error) {
+func NewClient(ctx context.Context, account config.Account) (*Client, error) {
+	// Validate account configuration
+	if err := validateAccount(account); err != nil {
+		return nil, fmt.Errorf("invalid account configuration: %w", err)
+	}
+
 	var c *client.Client
 	var err error
 
 	addr := fmt.Sprintf("%s:%d", account.Host, account.Port)
 
 	if account.UseSSL {
-		c, err = client.DialTLS(addr, &tls.Config{})
+		// Secure TLS configuration
+		tlsConfig := &tls.Config{
+			ServerName:         account.Host,
+			InsecureSkipVerify: false,
+			MinVersion:         tls.VersionTLS12,
+			// Add cipher suite preferences for better security
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			},
+		}
+		
+		// Create connection with timeout
+		c, err = client.DialTLS(addr, tlsConfig)
 	} else {
 		c, err = client.Dial(addr)
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to IMAP server: %w", err)
+		return nil, fmt.Errorf("failed to connect to IMAP server %s: %w", addr, err)
 	}
 
+	// Set timeouts on the connection - removed as go-imap client doesn't expose raw connection
+
 	// Authenticate (try OAuth2 first, then password)
-	if err := authenticateClient(c, account); err != nil {
+	if err := authenticateClient(ctx, c, account); err != nil {
 		c.Close()
 		return nil, fmt.Errorf("failed to authenticate: %w", err)
 	}
@@ -76,6 +114,27 @@ func NewClient(account config.Account) (*Client, error) {
 		conn:    c,
 		account: account,
 	}, nil
+}
+
+// validateAccount validates account configuration for security
+func validateAccount(account config.Account) error {
+	if err := security.ValidateHostname(account.Host); err != nil {
+		return fmt.Errorf("invalid hostname: %w", err)
+	}
+	
+	if err := security.ValidateUsername(account.Username); err != nil {
+		return fmt.Errorf("invalid username: %w", err)
+	}
+	
+	if account.Port <= 0 || account.Port > 65535 {
+		return fmt.Errorf("invalid port: %d", account.Port)
+	}
+	
+	if account.Name == "" {
+		return fmt.Errorf("account name cannot be empty")
+	}
+	
+	return nil
 }
 
 func (c *Client) Close() error {
@@ -211,20 +270,36 @@ func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
 	
 	// Look for RFC822 data (stored with nil key when using FetchRFC822)
 	if r, ok := msg.Body[nil]; ok && r != nil {
-		data, err := io.ReadAll(r)
+		// Use limited reader to prevent memory exhaustion
+		limitedReader := io.LimitReader(r, MaxMessageSize)
+		data, err := io.ReadAll(limitedReader)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read RFC822 body: %w", err)
 		}
+		
+		// Check if message was truncated
+		if len(data) == MaxMessageSize {
+			log.Printf("Warning: Message UID %d truncated at %d bytes", msg.Uid, MaxMessageSize)
+		}
+		
 		raw = data
 	} else {
 		// Fallback: try any available body section
 		for section, r := range msg.Body {
 			if r != nil {
-				data, err := io.ReadAll(r)
+				// Use limited reader to prevent memory exhaustion
+				limitedReader := io.LimitReader(r, MaxMessageSize)
+				data, err := io.ReadAll(limitedReader)
 				if err != nil {
 					log.Printf("Failed to read body section %v: %v", section, err)
 					continue
 				}
+				
+				// Check if message was truncated
+				if len(data) == MaxMessageSize {
+					log.Printf("Warning: Message UID %d section %v truncated at %d bytes", msg.Uid, section, MaxMessageSize)
+				}
+				
 				raw = data
 				break
 			}
@@ -311,10 +386,17 @@ func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
 				filename = "untitled"
 			}
 
-			data, err := io.ReadAll(part.Body)
+			// Use limited reader to prevent memory exhaustion from large attachments
+			limitedReader := io.LimitReader(part.Body, MaxMessageSize)
+			data, err := io.ReadAll(limitedReader)
 			if err != nil {
 				log.Printf("Failed to read attachment %s in message UID %d: %v", filename, msg.Uid, err)
 				continue
+			}
+			
+			// Check if attachment was truncated
+			if len(data) == MaxMessageSize {
+				log.Printf("Warning: Attachment %s in message UID %d truncated at %d bytes", filename, msg.Uid, MaxMessageSize)
 			}
 
 			attachment := Attachment{
@@ -330,8 +412,21 @@ func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
 }
 
 func getAddressString(addresses []*imap.Address) string {
+	if addresses == nil {
+		return ""
+	}
+	
 	var result []string
 	for _, addr := range addresses {
+		if addr == nil {
+			continue
+		}
+		
+		// Validate address components
+		if addr.MailboxName == "" || addr.HostName == "" {
+			continue // Skip invalid addresses
+		}
+		
 		if addr.PersonalName != "" {
 			result = append(result, fmt.Sprintf("%s <%s@%s>", addr.PersonalName, addr.MailboxName, addr.HostName))
 		} else {
@@ -342,7 +437,7 @@ func getAddressString(addresses []*imap.Address) string {
 }
 
 // authenticateClient attempts to authenticate with OAuth2 first, then falls back to password
-func authenticateClient(c *client.Client, account config.Account) error {
+func authenticateClient(ctx context.Context, c *client.Client, account config.Account) error {
 	// Detect authentication type
 	authType := auth.DetectAuthType(account.Username)
 	

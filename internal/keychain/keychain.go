@@ -2,6 +2,7 @@ package keychain
 
 import (
 	"fmt"
+	"imap-backup/internal/security"
 	"os/exec"
 	"strings"
 )
@@ -16,6 +17,18 @@ func NewKeychainService() *KeychainService {
 
 // StorePassword stores a password in Mac's keychain for an email account
 func (k *KeychainService) StorePassword(server, username, password string) error {
+	// Validate inputs to prevent command injection
+	if err := security.ValidateHostname(server); err != nil {
+		return fmt.Errorf("invalid server name: %w", err)
+	}
+	
+	if err := security.ValidateUsername(username); err != nil {
+		return fmt.Errorf("invalid username: %w", err)
+	}
+	
+	if password == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
 	
 	// First, try to update existing entry
 	cmd := exec.Command("security", "add-internet-password",
@@ -45,6 +58,15 @@ func (k *KeychainService) StorePassword(server, username, password string) error
 
 // GetPassword retrieves a password from Mac's keychain
 func (k *KeychainService) GetPassword(server, username string) (string, error) {
+	// Validate inputs to prevent command injection
+	if err := security.ValidateHostname(server); err != nil {
+		return "", fmt.Errorf("invalid server name: %w", err)
+	}
+	
+	if err := security.ValidateUsername(username); err != nil {
+		return "", fmt.Errorf("invalid username: %w", err)
+	}
+	
 	// Try internet password first
 	cmd := exec.Command("security", "find-internet-password",
 		"-s", server,
@@ -83,6 +105,15 @@ func (k *KeychainService) GetPassword(server, username string) (string, error) {
 
 // DeletePassword removes a password from Mac's keychain
 func (k *KeychainService) DeletePassword(server, username string) error {
+	// Validate inputs to prevent command injection
+	if err := security.ValidateHostname(server); err != nil {
+		return fmt.Errorf("invalid server name: %w", err)
+	}
+	
+	if err := security.ValidateUsername(username); err != nil {
+		return fmt.Errorf("invalid username: %w", err)
+	}
+	
 	// Delete internet password
 	cmd := exec.Command("security", "delete-internet-password",
 		"-s", server,
