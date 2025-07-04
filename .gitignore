@@ -1,0 +1,44 @@
+# Binaries
+imap-backup
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test and backup directories
+backup/
+test-backup/
+test-real/
+test-*/
+
+# Go build artifacts
+*.test
+*.prof
+*.out
+
+# Configuration files (may contain sensitive data)
+*.yaml
+*.yml
+*.json
+.imap-backup*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.log
