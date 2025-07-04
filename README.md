@@ -263,13 +263,65 @@ Run with verbose output to see detailed information:
 ./imap-backup backup -v
 ```
 
+## Development
+
+### Code Quality
+
+This project uses comprehensive code quality tools:
+
+```bash
+# Run all quality checks
+make quality
+
+# Individual checks
+make test        # Run tests
+make coverage    # Generate coverage report
+make lint        # Run golangci-lint
+make staticcheck # Run staticcheck
+make security    # Run gosec security scanner
+
+# Full CI pipeline
+make ci
+```
+
+### SonarQube Integration
+
+The project includes SonarQube integration for continuous code quality monitoring:
+
+- **Local Setup**: See [SONAR_SETUP.md](SONAR_SETUP.md) for detailed instructions
+- **Quick Start**: `docker-compose -f docker-compose.sonar.yml up -d`
+- **Analysis**: `make sonar-prepare && make sonar-docker`
+
+Quality metrics tracked:
+- Test coverage (target: >80%)
+- Security vulnerabilities and hotspots
+- Code smells and technical debt
+- Duplicated code blocks
+- Maintainability rating
+
+### Available Make Targets
+
+```bash
+make help    # Show all available targets
+make build   # Build the binary
+make test    # Run tests
+make clean   # Clean build artifacts
+```
+
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+4. Run quality checks: `make quality`
+5. Add tests if applicable
+6. Submit a pull request
+
+All contributions are automatically analyzed for:
+- Code quality and maintainability
+- Security vulnerabilities
+- Test coverage
+- Coding standards compliance
 
 ## License
 

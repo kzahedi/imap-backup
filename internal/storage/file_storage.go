@@ -141,17 +141,17 @@ func (fs *FileStorage) SaveMessageWithDelimiter(folderName, delimiter string, ms
 	return nil
 }
 
-func (fs *FileStorage) SaveAttachment(folderName string, messageUID uint32, attachment imap.Attachment) error {
-	return fs.SaveAttachmentWithDelimiter(folderName, "", messageUID, attachment)
+func (fs *FileStorage) SaveAttachment(folderName string, msg *imap.Message, attachment imap.Attachment) error {
+	return fs.SaveAttachmentWithDelimiter(folderName, "", msg, attachment)
 }
 
-func (fs *FileStorage) SaveAttachmentWithDelimiter(folderName, delimiter string, messageUID uint32, attachment imap.Attachment) error {
+func (fs *FileStorage) SaveAttachmentWithDelimiter(folderName, delimiter string, msg *imap.Message, attachment imap.Attachment) error {
 	// Validate folder name for security
 	if err := security.ValidateFolderName(folderName); err != nil {
 		return fmt.Errorf("invalid folder name: %w", err)
 	}
 	
-	attachmentDir, err := fs.getAttachmentDirWithDelimiter(folderName, delimiter, messageUID)
+	attachmentDir, err := fs.getAttachmentDirWithDelimiter(folderName, delimiter, msg)
 	if err != nil {
 		return fmt.Errorf("failed to get secure attachment directory: %w", err)
 	}
@@ -238,18 +238,20 @@ func (fs *FileStorage) getFolderPathWithDelimiter(folderName, delimiter string) 
 	return security.SecurePath(fs.basePath, userPath)
 }
 
-func (fs *FileStorage) getAttachmentDir(folderName string, messageUID uint32) (string, error) {
-	return fs.getAttachmentDirWithDelimiter(folderName, "", messageUID)
+func (fs *FileStorage) getAttachmentDir(folderName string, msg *imap.Message) (string, error) {
+	return fs.getAttachmentDirWithDelimiter(folderName, "", msg)
 }
 
-func (fs *FileStorage) getAttachmentDirWithDelimiter(folderName, delimiter string, messageUID uint32) (string, error) {
-	// Build relative path for attachments
+func (fs *FileStorage) getAttachmentDirWithDelimiter(folderName, delimiter string, msg *imap.Message) (string, error) {
+	// Build relative path for attachments using same naming as message files
 	sanitizedFolder := security.SanitizeFolderName(folderName)
 	if sanitizedFolder == "" {
 		sanitizedFolder = "INBOX"
 	}
 	
-	relativePath := filepath.Join(sanitizedFolder, "attachments", fmt.Sprintf("%d", messageUID))
+	// Use the same filename format as messages for the attachment directory
+	messageFilename := generateMessageFilename(msg)
+	relativePath := filepath.Join(sanitizedFolder, "attachments", messageFilename)
 	return security.SecurePath(fs.basePath, relativePath)
 }
 

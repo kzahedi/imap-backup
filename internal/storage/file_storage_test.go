@@ -268,15 +268,22 @@ func TestSaveAttachment(t *testing.T) {
 	}
 
 	folderName := "TestFolder"
-	messageUID := uint32(456)
+	msg := &imap.Message{
+		UID:     456,
+		Subject: "Test Message",
+		From:    "sender@example.com",
+		To:      "recipient@example.com",
+		Date:    time.Now(),
+		Flags:   []string{"\\Seen"},
+	}
 
-	err = fs.SaveAttachment(folderName, messageUID, attachment)
+	err = fs.SaveAttachment(folderName, msg, attachment)
 	if err != nil {
 		t.Fatalf("SaveAttachment() error = %v", err)
 	}
 
 	// Check that attachment file was created
-	attachmentDir, err := fs.getAttachmentDir(folderName, messageUID)
+	attachmentDir, err := fs.getAttachmentDir(folderName, msg)
 	if err != nil {
 		t.Fatalf("getAttachmentDir() error = %v", err)
 	}
@@ -338,7 +345,14 @@ func TestDuplicateAttachmentFilenames(t *testing.T) {
 	fs := NewFileStorage(baseDir)
 
 	folderName := "TestFolder"
-	messageUID := uint32(789)
+	msg := &imap.Message{
+		UID:     789,
+		Subject: "Test Message with Attachments",
+		From:    "sender@example.com",
+		To:      "recipient@example.com",
+		Date:    time.Now(),
+		Flags:   []string{"\\Seen"},
+	}
 
 	// Save first attachment
 	attachment1 := imap.Attachment{
@@ -346,7 +360,7 @@ func TestDuplicateAttachmentFilenames(t *testing.T) {
 		ContentType: "application/pdf",
 		Data:        []byte("first document"),
 	}
-	err = fs.SaveAttachment(folderName, messageUID, attachment1)
+	err = fs.SaveAttachment(folderName, msg, attachment1)
 	if err != nil {
 		t.Fatalf("SaveAttachment() first error = %v", err)
 	}
@@ -357,13 +371,13 @@ func TestDuplicateAttachmentFilenames(t *testing.T) {
 		ContentType: "application/pdf",
 		Data:        []byte("second document"),
 	}
-	err = fs.SaveAttachment(folderName, messageUID, attachment2)
+	err = fs.SaveAttachment(folderName, msg, attachment2)
 	if err != nil {
 		t.Fatalf("SaveAttachment() second error = %v", err)
 	}
 
 	// Check that both files exist with different names
-	attachmentDir, err := fs.getAttachmentDir(folderName, messageUID)
+	attachmentDir, err := fs.getAttachmentDir(folderName, msg)
 	if err != nil {
 		t.Fatalf("getAttachmentDir() error = %v", err)
 	}
