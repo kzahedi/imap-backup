@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"imap-backup/internal/config"
 	"imap-backup/internal/imap"
@@ -56,7 +57,8 @@ func runTestFetch(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Will fetch up to %d messages for testing\n", limit)
 	
 	// Create IMAP client
-	client, err := imap.NewClient(account)
+	ctx := context.Background()
+	client, err := imap.NewClient(ctx, account)
 	if err != nil {
 		return fmt.Errorf("failed to create IMAP client: %w", err)
 	}

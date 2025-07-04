@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"imap-backup/internal/imap"
+	"imap-backup/internal/security"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,14 +40,18 @@ func (fs *FileStorage) GetExistingUIDs(folderName string) (map[uint32]bool, erro
 }
 
 func (fs *FileStorage) GetExistingUIDsWithDelimiter(folderName, delimiter string) (map[uint32]bool, error) {
-	folderPath := fs.getFolderPathWithDelimiter(folderName, delimiter)
+	folderPath, err := fs.getFolderPathWithDelimiter(folderName, delimiter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get folder path: %w", err)
+	}
+	
 	uids := make(map[uint32]bool)
 
 	if _, err := os.Stat(folderPath); os.IsNotExist(err) {
 		return uids, nil
 	}
 
-	err := filepath.Walk(folderPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(folderPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -74,8 +79,18 @@ func (fs *FileStorage) SaveMessage(folderName string, msg *imap.Message) error {
 }
 
 func (fs *FileStorage) SaveMessageWithDelimiter(folderName, delimiter string, msg *imap.Message) error {
-	folderPath := fs.getFolderPathWithDelimiter(folderName, delimiter)
-	if err := os.MkdirAll(folderPath, 0755); err != nil {
+	// Validate folder name for security
+	if err := security.ValidateFolderName(folderName); err != nil {
+		return fmt.Errorf("invalid folder name: %w", err)
+	}
+	
+	folderPath, err := fs.getFolderPathWithDelimiter(folderName, delimiter)
+	if err != nil {
+		return fmt.Errorf("failed to get secure folder path: %w", err)
+	}
+	
+	// Use secure directory permissions
+	if err := os.MkdirAll(folderPath, security.SecureDirectoryMode); err != nil {
 		return fmt.Errorf("failed to create folder directory: %w", err)
 	}
 
@@ -107,13 +122,13 @@ func (fs *FileStorage) SaveMessageWithDelimiter(folderName, delimiter string, ms
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	if err := os.WriteFile(metadataPath, metadataData, 0644); err != nil {
+	if err := os.WriteFile(metadataPath, metadataData, security.SecureFileMode); err != nil {
 		return fmt.Errorf("failed to write metadata: %w", err)
 	}
 
 	// Save raw message
 	rawPath := filepath.Join(folderPath, fmt.Sprintf("%d.eml", msg.UID))
-	if err := os.WriteFile(rawPath, msg.Raw, 0644); err != nil {
+	if err := os.WriteFile(rawPath, msg.Raw, security.SecureFileMode); err != nil {
 		return fmt.Errorf("failed to write raw message: %w", err)
 	}
 
@@ -125,8 +140,17 @@ func (fs *FileStorage) SaveAttachment(folderName string, messageUID uint32, atta
 }
 
 func (fs *FileStorage) SaveAttachmentWithDelimiter(folderName, delimiter string, messageUID uint32, attachment imap.Attachment) error {
-	attachmentDir := fs.getAttachmentDirWithDelimiter(folderName, delimiter, messageUID)
-	if err := os.MkdirAll(attachmentDir, 0755); err != nil {
+	// Validate folder name for security
+	if err := security.ValidateFolderName(folderName); err != nil {
+		return fmt.Errorf("invalid folder name: %w", err)
+	}
+	
+	attachmentDir, err := fs.getAttachmentDirWithDelimiter(folderName, delimiter, messageUID)
+	if err != nil {
+		return fmt.Errorf("failed to get secure attachment directory: %w", err)
+	}
+	
+	if err := os.MkdirAll(attachmentDir, security.SecureDirectoryMode); err != nil {
 		return fmt.Errorf("failed to create attachment directory: %w", err)
 	}
 
@@ -148,18 +172,23 @@ func (fs *FileStorage) SaveAttachmentWithDelimiter(folderName, delimiter string,
 		counter++
 	}
 
-	if err := os.WriteFile(attachmentPath, attachment.Data, 0644); err != nil {
+	if err := os.WriteFile(attachmentPath, attachment.Data, security.SecureFileMode); err != nil {
 		return fmt.Errorf("failed to write attachment: %w", err)
 	}
 
 	return nil
 }
 
-func (fs *FileStorage) getFolderPath(folderName string) string {
+func (fs *FileStorage) getFolderPath(folderName string) (string, error) {
 	return fs.getFolderPathWithDelimiter(folderName, "")
 }
 
-func (fs *FileStorage) getFolderPathWithDelimiter(folderName, delimiter string) string {
+func (fs *FileStorage) getFolderPathWithDelimiter(folderName, delimiter string) (string, error) {
+	// Validate folder name first
+	if err := security.ValidateFolderName(folderName); err != nil {
+		return "", fmt.Errorf("invalid folder name: %w", err)
+	}
+	
 	// Use the actual IMAP delimiter if provided, otherwise try to detect
 	if delimiter == "" {
 		// Try common IMAP delimiters
@@ -171,11 +200,11 @@ func (fs *FileStorage) getFolderPathWithDelimiter(folderName, delimiter string) 
 			delimiter = "\\"
 		} else {
 			// No hierarchy detected, treat as single folder
-			sanitized := sanitizeFolderName(folderName)
+			sanitized := security.SanitizeFolderName(folderName)
 			if sanitized == "" {
-				return filepath.Join(fs.basePath, "INBOX")
+				sanitized = "INBOX"
 			}
-			return filepath.Join(fs.basePath, sanitized)
+			return security.SecurePath(fs.basePath, sanitized)
 		}
 	}
 	
@@ -188,7 +217,7 @@ func (fs *FileStorage) getFolderPathWithDelimiter(folderName, delimiter string) 
 			continue // Skip empty components
 		}
 		// Sanitize each folder component for filesystem safety
-		sanitized := sanitizeFolderName(component)
+		sanitized := security.SanitizeFolderName(component)
 		if sanitized != "" {
 			sanitizedComponents = append(sanitizedComponents, sanitized)
 		}
@@ -196,18 +225,26 @@ func (fs *FileStorage) getFolderPathWithDelimiter(folderName, delimiter string) 
 	
 	// Build the final path
 	if len(sanitizedComponents) == 0 {
-		return filepath.Join(fs.basePath, "INBOX") // Default to INBOX if no valid components
+		return security.SecurePath(fs.basePath, "INBOX")
 	}
 	
-	return filepath.Join(fs.basePath, filepath.Join(sanitizedComponents...))
+	userPath := filepath.Join(sanitizedComponents...)
+	return security.SecurePath(fs.basePath, userPath)
 }
 
-func (fs *FileStorage) getAttachmentDir(folderName string, messageUID uint32) string {
+func (fs *FileStorage) getAttachmentDir(folderName string, messageUID uint32) (string, error) {
 	return fs.getAttachmentDirWithDelimiter(folderName, "", messageUID)
 }
 
-func (fs *FileStorage) getAttachmentDirWithDelimiter(folderName, delimiter string, messageUID uint32) string {
-	return filepath.Join(fs.getFolderPathWithDelimiter(folderName, delimiter), "attachments", fmt.Sprintf("%d", messageUID))
+func (fs *FileStorage) getAttachmentDirWithDelimiter(folderName, delimiter string, messageUID uint32) (string, error) {
+	// Build relative path for attachments
+	sanitizedFolder := security.SanitizeFolderName(folderName)
+	if sanitizedFolder == "" {
+		sanitizedFolder = "INBOX"
+	}
+	
+	relativePath := filepath.Join(sanitizedFolder, "attachments", fmt.Sprintf("%d", messageUID))
+	return security.SecurePath(fs.basePath, relativePath)
 }
 
 func sanitizeFilename(filename string) string {
@@ -239,34 +276,4 @@ func sanitizeFilename(filename string) string {
 	return result
 }
 
-func sanitizeFolderName(folderName string) string {
-	// Remove or replace characters that are problematic in folder names
-	// More permissive than filename sanitization since we're creating directories
-	replacements := map[string]string{
-		":":  "_",
-		"*":  "_",
-		"?":  "_",
-		"\"": "_",
-		"<":  "_",
-		">":  "_",
-		"|":  "_",
-		// Don't replace / and \ here as they're handled in getFolderPath
-	}
-
-	result := strings.TrimSpace(folderName)
-	for old, new := range replacements {
-		result = strings.ReplaceAll(result, old, new)
-	}
-
-	// Handle special folder names that might conflict with system folders
-	if result == "." || result == ".." {
-		result = "_" + result
-	}
-
-	// Truncate if too long (filesystem limit)
-	if len(result) > 255 {
-		result = result[:255]
-	}
-
-	return result
-}
+// Note: sanitizeFolderName removed - now using security.SanitizeFolderName

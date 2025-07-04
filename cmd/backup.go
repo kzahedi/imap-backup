@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"imap-backup/internal/backup"
 	"imap-backup/internal/config"
@@ -25,6 +26,9 @@ func init() {
 }
 
 func runBackup(cmd *cobra.Command, args []string) error {
+	// Create context for the backup operation
+	ctx := context.Background()
+	
 	// Get output directory from root command flags
 	outputDir, _ := cmd.Root().Flags().GetString("output")
 	if outputDir == "" {
@@ -51,5 +55,5 @@ func runBackup(cmd *cobra.Command, args []string) error {
 	}
 
 	backupService := backup.NewService(cfg)
-	return backupService.Run(backupConfig)
+	return backupService.Run(ctx, backupConfig)
 }
