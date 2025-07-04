@@ -235,6 +235,15 @@ func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
 		return nil, fmt.Errorf("no message body found")
 	}
 
+	// Set our custom charset reader globally for this parsing
+	originalCharsetReader := message.CharsetReader
+	message.CharsetReader = func(charsetName string, input io.Reader) (io.Reader, error) {
+		return charset.NewReader(input, charsetName)
+	}
+	defer func() {
+		message.CharsetReader = originalCharsetReader
+	}()
+
 	// Parse the message with charset support
 	entity, err := message.Read(strings.NewReader(string(raw)))
 	if err != nil {
