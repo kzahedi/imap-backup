@@ -213,10 +213,10 @@ backup/
 │   ├── Sent/
 │   ├── Drafts/
 │   └── Friends/           # Nested folder structure
-│       ├── Mario/         # Instead of "Friends_Mario"
+│       ├── Mario/         
 │       │   ├── 10.eml
 │       │   └── 10.json
-│       └── Family/
+│       └── Luigi/
 │           └── Photos/
 └── AnotherAccount/
     └── ...
