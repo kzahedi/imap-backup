@@ -8,7 +8,6 @@ import (
 	"imap-backup/internal/security"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -60,14 +59,18 @@ func (fs *FileStorage) GetExistingUIDsWithDelimiter(folderName, delimiter string
 			return nil
 		}
 
-		// Extract UID from filename
-		filename := strings.TrimSuffix(info.Name(), ".json")
-		uid, err := strconv.ParseUint(filename, 10, 32)
+		// Read JSON metadata to extract UID
+		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil // Skip files that don't follow our naming convention
+			return nil // Skip files we can't read
 		}
 
-		uids[uint32(uid)] = true
+		var metadata MessageMetadata
+		if err := json.Unmarshal(data, &metadata); err != nil {
+			return nil // Skip files with invalid JSON
+		}
+
+		uids[metadata.UID] = true
 		return nil
 	})
 
@@ -115,8 +118,11 @@ func (fs *FileStorage) SaveMessageWithDelimiter(folderName, delimiter string, ms
 		Checksum:    checksum,
 	}
 
+	// Generate unique filename based on sender and timestamp
+	baseFilename := generateMessageFilename(msg)
+	
 	// Save metadata
-	metadataPath := filepath.Join(folderPath, fmt.Sprintf("%d.json", msg.UID))
+	metadataPath := filepath.Join(folderPath, fmt.Sprintf("%s.json", baseFilename))
 	metadataData, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -127,7 +133,7 @@ func (fs *FileStorage) SaveMessageWithDelimiter(folderName, delimiter string, ms
 	}
 
 	// Save raw message
-	rawPath := filepath.Join(folderPath, fmt.Sprintf("%d.eml", msg.UID))
+	rawPath := filepath.Join(folderPath, fmt.Sprintf("%s.eml", baseFilename))
 	if err := os.WriteFile(rawPath, msg.Raw, security.SecureFileMode); err != nil {
 		return fmt.Errorf("failed to write raw message: %w", err)
 	}
@@ -274,6 +280,80 @@ func sanitizeFilename(filename string) string {
 	}
 
 	return result
+}
+
+// generateMessageFilename creates a unique filename using sender and timestamp
+// Format: <Sender Name>_YYYY-MM-DD_HH_MM_SS
+func generateMessageFilename(msg *imap.Message) string {
+	// Extract sender name from From field
+	senderName := extractSenderName(msg.From)
+	
+	// Format timestamp
+	timestamp := msg.Date.Format("2006-01-02_15_04_05")
+	
+	// Create base filename
+	baseFilename := fmt.Sprintf("%s_%s", senderName, timestamp)
+	
+	// Sanitize the filename
+	return sanitizeFilename(baseFilename)
+}
+
+// extractSenderName extracts a clean sender name from email address
+func extractSenderName(from string) string {
+	if from == "" {
+		return "Unknown"
+	}
+	
+	// Try to extract name from "Name <email@domain.com>" format
+	if strings.Contains(from, "<") && strings.Contains(from, ">") {
+		nameEnd := strings.Index(from, "<")
+		if nameEnd > 0 {
+			name := strings.TrimSpace(from[:nameEnd])
+			// Remove quotes if present
+			name = strings.Trim(name, "\"")
+			if name != "" {
+				return sanitizeForFilename(name)
+			}
+		}
+	}
+	
+	// Try to extract name from just email address
+	if strings.Contains(from, "@") {
+		atIndex := strings.Index(from, "@")
+		localPart := from[:atIndex]
+		// Remove common prefixes and clean up
+		localPart = strings.ReplaceAll(localPart, ".", "_")
+		return sanitizeForFilename(localPart)
+	}
+	
+	// If all else fails, use the whole string
+	return sanitizeForFilename(from)
+}
+
+// sanitizeForFilename removes problematic characters for filenames
+func sanitizeForFilename(name string) string {
+	// Replace spaces and problematic characters
+	name = strings.ReplaceAll(name, " ", "_")
+	name = strings.ReplaceAll(name, ".", "_")
+	name = strings.ReplaceAll(name, ",", "_")
+	name = strings.ReplaceAll(name, ";", "_")
+	name = strings.ReplaceAll(name, "'", "")
+	name = strings.ReplaceAll(name, "\"", "")
+	
+	// Apply the general sanitizer
+	name = sanitizeFilename(name)
+	
+	// Limit length for filename component
+	if len(name) > 50 {
+		name = name[:50]
+	}
+	
+	// Ensure it's not empty
+	if name == "" || name == "_" {
+		name = "Unknown"
+	}
+	
+	return name
 }
 
 // Note: sanitizeFolderName removed - now using security.SanitizeFolderName

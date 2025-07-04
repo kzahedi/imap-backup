@@ -184,21 +184,37 @@ func TestFileStorageIntegration(t *testing.T) {
 		t.Fatalf("SaveMessage() error = %v", err)
 	}
 
-	// Check that files were created
+	// Check that files were created with new naming convention
 	folderPath, err := fs.getFolderPath(folderName)
 	if err != nil {
 		t.Fatalf("getFolderPath() error = %v", err)
 	}
 
-	emlPath := filepath.Join(folderPath, "123.eml")
-	jsonPath := filepath.Join(folderPath, "123.json")
-
-	if _, err := os.Stat(emlPath); os.IsNotExist(err) {
-		t.Errorf("EML file not created: %v", emlPath)
+	// List files in the folder to find our created files
+	files, err := os.ReadDir(folderPath)
+	if err != nil {
+		t.Fatalf("ReadDir() error = %v", err)
 	}
 
-	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
-		t.Errorf("JSON file not created: %v", jsonPath)
+	var emlFound, jsonFound bool
+	var emlPath string
+	
+	for _, file := range files {
+		if strings.HasSuffix(file.Name(), ".eml") {
+			emlFound = true
+			emlPath = filepath.Join(folderPath, file.Name())
+		}
+		if strings.HasSuffix(file.Name(), ".json") {
+			jsonFound = true
+		}
+	}
+
+	if !emlFound {
+		t.Errorf("EML file not created in folder: %v", folderPath)
+	}
+
+	if !jsonFound {
+		t.Errorf("JSON file not created in folder: %v", folderPath)
 	}
 
 	// Test getting existing UIDs
@@ -372,12 +388,119 @@ func TestDuplicateAttachmentFilenames(t *testing.T) {
 	}
 }
 
+func TestGenerateMessageFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		from     string
+		date     time.Time
+		expected string
+	}{
+		{
+			name:     "sender with name and email",
+			from:     "John Doe <john@example.com>",
+			date:     time.Date(2024, 7, 4, 15, 30, 45, 0, time.UTC),
+			expected: "John_Doe_2024-07-04_15_30_45",
+		},
+		{
+			name:     "email only",
+			from:     "jane.smith@example.com",
+			date:     time.Date(2024, 7, 4, 15, 30, 45, 0, time.UTC),
+			expected: "jane_smith_2024-07-04_15_30_45",
+		},
+		{
+			name:     "sender with problematic characters",
+			from:     "Bad/Name <bad*name@example.com>",
+			date:     time.Date(2024, 7, 4, 15, 30, 45, 0, time.UTC),
+			expected: "Bad_Name_2024-07-04_15_30_45",
+		},
+		{
+			name:     "empty sender",
+			from:     "",
+			date:     time.Date(2024, 7, 4, 15, 30, 45, 0, time.UTC),
+			expected: "Unknown_2024-07-04_15_30_45",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &imap.Message{
+				From: tt.from,
+				Date: tt.date,
+			}
+			
+			result := generateMessageFilename(msg)
+			if result != tt.expected {
+				t.Errorf("generateMessageFilename() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractSenderName(t *testing.T) {
+	tests := []struct {
+		name     string
+		from     string
+		expected string
+	}{
+		{
+			name:     "name with email",
+			from:     "John Doe <john@example.com>",
+			expected: "John_Doe",
+		},
+		{
+			name:     "quoted name with email",
+			from:     "\"Jane Smith\" <jane@example.com>",
+			expected: "Jane_Smith",
+		},
+		{
+			name:     "email only",
+			from:     "user@example.com",
+			expected: "user",
+		},
+		{
+			name:     "email with dots",
+			from:     "user.name@example.com",
+			expected: "user_name",
+		},
+		{
+			name:     "empty from",
+			from:     "",
+			expected: "Unknown",
+		},
+		{
+			name:     "name with special chars",
+			from:     "Bad/Name*Test <user@example.com>",
+			expected: "Bad_Name_Test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractSenderName(tt.from)
+			if result != tt.expected {
+				t.Errorf("extractSenderName() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
 // Benchmark tests
 func BenchmarkSanitizeFilename(b *testing.B) {
 	filename := "complex:file*name?with<many>problematic|chars.txt"
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		sanitizeFilename(filename)
+	}
+}
+
+func BenchmarkGenerateMessageFilename(b *testing.B) {
+	msg := &imap.Message{
+		From: "John Doe <john@example.com>",
+		Date: time.Now(),
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		generateMessageFilename(msg)
 	}
 }
 
