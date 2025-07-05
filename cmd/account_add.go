@@ -87,12 +87,14 @@ func runAddAccount(cmd *cobra.Command, args []string) error {
 	
 	// Create stored account
 	account := config.StoredAccount{
-		Name:     name,
-		Host:     host,
-		Port:     port,
-		Username: username,
-		UseSSL:   useSSL,
-		AuthType: authType,
+		BaseAccount: config.BaseAccount{
+			Name:     name,
+			Host:     host,
+			Port:     port,
+			Username: username,
+			UseSSL:   useSSL,
+			AuthType: authType,
+		},
 	}
 	
 	// Save account to JSON

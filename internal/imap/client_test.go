@@ -19,11 +19,13 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "valid account",
 			account: config.Account{
-				Name:     "Test Account",
-				Host:     "imap.example.com",
-				Port:     993,
-				Username: "user@example.com",
-				UseSSL:   true,
+				BaseAccount: config.BaseAccount{
+					Name:     "Test Account",
+					Host:     "imap.example.com",
+					Port:     993,
+					Username: "user@example.com",
+					UseSSL:   true,
+				},
 			},
 			wantErr: false,
 		},

@@ -14,19 +14,7 @@ type JSONAccountStore struct {
 	configPath string
 }
 
-// StoredAccount represents an account stored in JSON (without password)
-type StoredAccount struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Host        string    `json:"host"`
-	Port        int       `json:"port"`
-	Username    string    `json:"username"`
-	UseSSL      bool      `json:"use_ssl"`
-	AuthType    string    `json:"auth_type"` // "password", "oauth2"
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	LastBackup  time.Time `json:"last_backup,omitempty"`
-}
+// StoredAccount is now defined in account.go to eliminate duplication
 
 // AccountsConfig represents the JSON configuration structure
 type AccountsConfig struct {
@@ -188,13 +176,8 @@ func (j *JSONAccountStore) UpdateLastBackup(id string) error {
 // ConvertToAccount converts a StoredAccount to the main Account type
 func (j *JSONAccountStore) ConvertToAccount(stored StoredAccount, password string) Account {
 	return Account{
-		Name:     stored.Name,
-		Host:     stored.Host,
-		Port:     stored.Port,
-		Username: stored.Username,
-		Password: password,
-		UseSSL:   stored.UseSSL,
-		AuthType: stored.AuthType,
+		BaseAccount: stored.BaseAccount,
+		Password:    password,
 	}
 }
 
@@ -205,15 +188,19 @@ func (j *JSONAccountStore) ConvertFromAccount(account Account) StoredAccount {
 		authType = detectAuthType(account.Username)
 	}
 	
-	return StoredAccount{
-		ID:       generateAccountID(account.Username, account.Host),
-		Name:     account.Name,
-		Host:     account.Host,
-		Port:     account.Port,
-		Username: account.Username,
-		UseSSL:   account.UseSSL,
-		AuthType: authType,
+	stored := StoredAccount{
+		BaseAccount: account.BaseAccount,
+		ID:          generateAccountID(account.Username, account.Host),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
+	
+	// Override auth type if detected
+	if authType != account.AuthType {
+		stored.AuthType = authType
+	}
+	
+	return stored
 }
 
 // generateAccountID generates a unique ID for an account

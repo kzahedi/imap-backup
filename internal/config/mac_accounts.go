@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"imap-backup/internal/providers"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,7 +114,9 @@ func parseMailAppAccounts(accountsFile string) ([]Account, error) {
 // parseMailAccount parses a single Mail.app account
 func parseMailAccount(accountMap map[string]interface{}) *Account {
 	account := &Account{
-		UseSSL: true, // Default to SSL
+		BaseAccount: BaseAccount{
+			UseSSL: true, // Default to SSL
+		},
 	}
 	
 	// Get account name
@@ -210,7 +213,9 @@ func parseInternetAccount(accountMap map[string]interface{}) *Account {
 	}
 	
 	account := &Account{
-		UseSSL: true, // Default to SSL
+		BaseAccount: BaseAccount{
+			UseSSL: true, // Default to SSL
+		},
 	}
 	
 	// Extract account information
@@ -265,32 +270,5 @@ func removeDuplicateAccounts(accounts []Account) []Account {
 
 // getCommonIMAPSettings returns common IMAP settings for popular email providers
 func getCommonIMAPSettings(emailAddress string) (string, int, bool) {
-	emailAddress = strings.ToLower(emailAddress)
-	
-	// Common IMAP settings for popular providers
-	providers := map[string]struct {
-		host    string
-		port    int
-		useSSL  bool
-	}{
-		"gmail.com":       {"imap.gmail.com", 993, true},
-		"googlemail.com":  {"imap.gmail.com", 993, true},
-		"outlook.com":     {"outlook.office365.com", 993, true},
-		"hotmail.com":     {"outlook.office365.com", 993, true},
-		"live.com":        {"outlook.office365.com", 993, true},
-		"yahoo.com":       {"imap.mail.yahoo.com", 993, true},
-		"icloud.com":      {"imap.mail.me.com", 993, true},
-		"me.com":          {"imap.mail.me.com", 993, true},
-		"mac.com":         {"imap.mail.me.com", 993, true},
-		"aol.com":         {"imap.aol.com", 993, true},
-	}
-	
-	for providerDomain, settings := range providers {
-		if strings.Contains(emailAddress, providerDomain) {
-			return settings.host, settings.port, settings.useSSL
-		}
-	}
-	
-	// Default IMAP settings
-	return "", 993, true
+	return providers.GetIMAPSettings(emailAddress)
 }
