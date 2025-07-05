@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"imap-backup/internal/cmdutil"
 	"imap-backup/internal/config"
+	"imap-backup/internal/errors"
 	"imap-backup/internal/keychain"
 	"imap-backup/internal/providers"
 
@@ -74,15 +76,15 @@ func runAddAccount(cmd *cobra.Command, args []string) error {
 			// Prompt for password if not found in keychain
 			fmt.Print("Enter password: ")
 			if _, err := fmt.Scanln(&password); err != nil {
-				return fmt.Errorf("failed to read password: %w", err)
+				return errors.Wrap(err, "read password")
 			}
 		}
 	}
 	
 	// Create account store
-	store, err := config.NewJSONAccountStore()
+	store, err := cmdutil.GetAccountStore()
 	if err != nil {
-		return fmt.Errorf("failed to create account store: %w", err)
+		return err
 	}
 	
 	// Create stored account
@@ -99,7 +101,7 @@ func runAddAccount(cmd *cobra.Command, args []string) error {
 	
 	// Save account to JSON
 	if err := store.AddAccount(account); err != nil {
-		return fmt.Errorf("failed to save account: %w", err)
+		return errors.WrapAccount(err, "save", account.Name)
 	}
 	
 	// Store password in keychain if provided and not already there

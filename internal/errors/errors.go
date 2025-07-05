@@ -50,3 +50,53 @@ func NewValidation(field, reason string) error {
 func NewConfiguration(setting, reason string) error {
 	return fmt.Errorf("configuration error for %s: %s", setting, reason)
 }
+
+// Common operation helpers to reduce duplication
+
+// WrapStore wraps errors related to store operations
+func WrapStore(err error, operation string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("failed to %s account store: %w", operation, err)
+}
+
+// WrapKeychain wraps errors related to keychain operations
+func WrapKeychain(err error, operation string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("failed to %s password from keychain: %w", operation, err)
+}
+
+// WrapAccount wraps errors related to account operations
+func WrapAccount(err error, operation, accountName string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("failed to %s account '%s': %w", operation, accountName, err)
+}
+
+// WrapFile wraps errors related to file operations
+func WrapFile(err error, operation, filename string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("failed to %s file '%s': %w", operation, filename, err)
+}
+
+// WrapConnection wraps errors related to connection operations
+func WrapConnection(err error, operation, host string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("failed to %s connection to %s: %w", operation, host, err)
+}
+
+// WrapBackup wraps errors related to backup operations
+func WrapBackup(err error, operation string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("backup failed: %s: %w", operation, err)
+}

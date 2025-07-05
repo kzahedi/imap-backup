@@ -17,11 +17,33 @@ A fast, efficient command-line tool for backing up IMAP email accounts written i
 
 ## Installation
 
-### Prerequisites
+### Option 1: Automatic Installation (Recommended)
+
+For automatic weekly backups with Mac wake scheduling:
+
+```bash
+# Build the binary
+go build -o imap-backup .
+
+# Run the automated installer
+./install.sh
+```
+
+This sets up:
+- ✅ Weekly automatic backups (Sundays at 2:00 AM)
+- ⏰ Mac wake scheduling (daily at 1:55 AM)
+- 📝 Automatic logging and notifications
+- 🔧 Complete system integration
+
+**📋 See [INSTALLATION.md](INSTALLATION.md) for detailed setup guide**
+
+### Option 2: Manual Installation
+
+#### Prerequisites
 
 - Go 1.21 or later
 
-### Build from source
+#### Build from source
 
 ```bash
 git clone <repository-url>
