@@ -2,10 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"imap-backup/internal/config"
+	"imap-backup/internal/cmdutil"
+	"imap-backup/internal/errors"
 	"imap-backup/internal/keychain"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -56,59 +55,17 @@ func runListAccounts(cmd *cobra.Command, args []string) error {
 	showPasswords, _ := cmd.Flags().GetBool("show-passwords")
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	
-	store, err := config.NewJSONAccountStore()
+	store, err := cmdutil.LoadAccountStore()
 	if err != nil {
-		return fmt.Errorf("failed to create account store: %w", err)
+		return err
 	}
 	
-	accounts, err := store.LoadAccounts()
+	accounts, err := cmdutil.GetAccountsFromStore(store)
 	if err != nil {
-		return fmt.Errorf("failed to load accounts: %w", err)
+		return err
 	}
 	
-	if len(accounts) == 0 {
-		fmt.Println("No accounts configured.")
-		fmt.Println("Use 'imap-backup account add' to add an account.")
-		return nil
-	}
-	
-	fmt.Printf("Found %d account(s):\n\n", len(accounts))
-	
-	keychainSvc := keychain.NewKeychainService()
-	
-	for i, account := range accounts {
-		fmt.Printf("%d. %s (ID: %s)\n", i+1, account.Name, account.ID)
-		fmt.Printf("   Host: %s:%d\n", account.Host, account.Port)
-		fmt.Printf("   Username: %s\n", account.Username)
-		fmt.Printf("   SSL: %t\n", account.UseSSL)
-		fmt.Printf("   Auth Type: %s\n", account.AuthType)
-		
-		if verbose {
-			fmt.Printf("   Created: %s\n", account.CreatedAt.Format(time.RFC3339))
-			fmt.Printf("   Updated: %s\n", account.UpdatedAt.Format(time.RFC3339))
-			if !account.LastBackup.IsZero() {
-				fmt.Printf("   Last Backup: %s\n", account.LastBackup.Format(time.RFC3339))
-			}
-		}
-		
-		// Check keychain for password
-		if account.AuthType == "password" {
-			password, err := keychainSvc.GetPassword(account.Host, account.Username)
-			if err != nil {
-				fmt.Printf("   Password: (not found in keychain)\n")
-			} else {
-				if showPasswords {
-					fmt.Printf("   Password: %s\n", password)
-				} else {
-					fmt.Printf("   Password: %s\n", strings.Repeat("*", len(password)))
-				}
-			}
-		} else {
-			fmt.Printf("   Password: (OAuth2 - managed by system)\n")
-		}
-		
-		fmt.Println()
-	}
+	cmdutil.DisplayAccountList(accounts, verbose, showPasswords)
 	
 	fmt.Printf("Configuration file: %s\n", store.GetConfigPath())
 	
@@ -119,15 +76,15 @@ func runRemoveAccount(cmd *cobra.Command, args []string) error {
 	accountID := args[0]
 	keepPassword, _ := cmd.Flags().GetBool("keep-password")
 	
-	store, err := config.NewJSONAccountStore()
+	store, err := cmdutil.GetAccountStore()
 	if err != nil {
-		return fmt.Errorf("failed to create account store: %w", err)
+		return err
 	}
 	
 	// Get account details before removing
 	account, err := store.GetAccount(accountID)
 	if err != nil {
-		return fmt.Errorf("account not found: %w", err)
+		return errors.WrapAccount(err, "find", accountID)
 	}
 	
 	// Remove from keychain unless --keep-password is specified
@@ -144,7 +101,7 @@ func runRemoveAccount(cmd *cobra.Command, args []string) error {
 	
 	// Remove from JSON store
 	if err := store.RemoveAccount(accountID); err != nil {
-		return fmt.Errorf("failed to remove account: %w", err)
+		return errors.WrapAccount(err, "remove", account.Name)
 	}
 	
 	fmt.Printf("Account '%s' removed from configuration.\n", account.Name)
@@ -159,14 +116,14 @@ func runRemoveAccount(cmd *cobra.Command, args []string) error {
 func runTestAccount(cmd *cobra.Command, args []string) error {
 	accountID := args[0]
 	
-	store, err := config.NewJSONAccountStore()
+	store, err := cmdutil.GetAccountStore()
 	if err != nil {
-		return fmt.Errorf("failed to create account store: %w", err)
+		return err
 	}
 	
 	storedAccount, err := store.GetAccount(accountID)
 	if err != nil {
-		return fmt.Errorf("account not found: %w", err)
+		return errors.WrapAccount(err, "find", accountID)
 	}
 	
 	fmt.Printf("Testing connection to %s (%s)...\n", storedAccount.Name, storedAccount.Host)
@@ -177,7 +134,7 @@ func runTestAccount(cmd *cobra.Command, args []string) error {
 		keychainSvc := keychain.NewKeychainService()
 		password, err = keychainSvc.GetPassword(storedAccount.Host, storedAccount.Username)
 		if err != nil {
-			return fmt.Errorf("failed to get password from keychain: %w", err)
+			return errors.WrapKeychain(err, "get")
 		}
 	}
 	

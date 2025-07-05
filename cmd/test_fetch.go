@@ -3,7 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"imap-backup/internal/config"
+	"imap-backup/internal/cmdutil"
+	"imap-backup/internal/errors"
 	"imap-backup/internal/imap"
 
 	"github.com/spf13/cobra"
@@ -29,14 +30,14 @@ func runTestFetch(cmd *cobra.Command, args []string) error {
 	folder, _ := cmd.Flags().GetString("folder")
 	
 	// Load configuration
-	store, err := config.NewJSONAccountStore()
+	store, err := cmdutil.GetAccountStore()
 	if err != nil {
-		return fmt.Errorf("failed to create account store: %w", err)
+		return err
 	}
 	
 	storedAccount, err := store.GetAccount(accountID)
 	if err != nil {
-		return fmt.Errorf("account not found: %w", err)
+		return errors.WrapAccount(err, "find", accountID)
 	}
 	
 	// Get password from keychain if needed

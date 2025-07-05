@@ -3,6 +3,7 @@ package imap
 import (
 	"context"
 	"imap-backup/internal/config"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,11 +33,13 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "invalid hostname",
 			account: config.Account{
-				Name:     "Test Account",
-				Host:     "invalid;host",
-				Port:     993,
-				Username: "user@example.com",
-				UseSSL:   true,
+				BaseAccount: config.BaseAccount{
+					Name:     "Test Account",
+					Host:     "invalid;host",
+					Port:     993,
+					Username: "user@example.com",
+					UseSSL:   true,
+				},
 			},
 			wantErr: true,
 			errMsg:  "invalid hostname",
@@ -44,11 +47,13 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "invalid username",
 			account: config.Account{
-				Name:     "Test Account",
-				Host:     "imap.example.com",
-				Port:     993,
-				Username: "notanemail",
-				UseSSL:   true,
+				BaseAccount: config.BaseAccount{
+					Name:     "Test Account",
+					Host:     "imap.example.com",
+					Port:     993,
+					Username: "notanemail",
+					UseSSL:   true,
+				},
 			},
 			wantErr: true,
 			errMsg:  "invalid username",
@@ -56,11 +61,13 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "invalid port",
 			account: config.Account{
-				Name:     "Test Account",
-				Host:     "imap.example.com",
-				Port:     0,
-				Username: "user@example.com",
-				UseSSL:   true,
+				BaseAccount: config.BaseAccount{
+					Name:     "Test Account",
+					Host:     "imap.example.com",
+					Port:     0,
+					Username: "user@example.com",
+					UseSSL:   true,
+				},
 			},
 			wantErr: true,
 			errMsg:  "invalid port",
@@ -68,11 +75,13 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "port too high",
 			account: config.Account{
-				Name:     "Test Account",
-				Host:     "imap.example.com",
-				Port:     70000,
-				Username: "user@example.com",
-				UseSSL:   true,
+				BaseAccount: config.BaseAccount{
+					Name:     "Test Account",
+					Host:     "imap.example.com",
+					Port:     70000,
+					Username: "user@example.com",
+					UseSSL:   true,
+				},
 			},
 			wantErr: true,
 			errMsg:  "invalid port",
@@ -80,11 +89,13 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "empty account name",
 			account: config.Account{
-				Name:     "",
-				Host:     "imap.example.com",
-				Port:     993,
-				Username: "user@example.com",
-				UseSSL:   true,
+				BaseAccount: config.BaseAccount{
+					Name:     "",
+					Host:     "imap.example.com",
+					Port:     993,
+					Username: "user@example.com",
+					UseSSL:   true,
+				},
 			},
 			wantErr: true,
 			errMsg:  "account name cannot be empty",
@@ -99,7 +110,7 @@ func TestValidateAccount(t *testing.T) {
 					t.Errorf("validateAccount() expected error, got nil")
 					return
 				}
-				if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
+				if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
 					t.Errorf("validateAccount() error = %v, want error containing %q", err, tt.errMsg)
 				}
 			} else {
@@ -258,40 +269,25 @@ func TestNewClientValidation(t *testing.T) {
 	ctx := context.Background()
 	
 	invalidAccount := config.Account{
-		Name:     "Test",
-		Host:     "invalid;host",
-		Port:     993,
-		Username: "user@example.com",
-		UseSSL:   true,
+		BaseAccount: config.BaseAccount{
+			Name:     "Test",
+			Host:     "invalid;host",
+			Port:     993,
+			Username: "user@example.com",
+			UseSSL:   true,
+		},
 	}
 
 	_, err := NewClient(ctx, invalidAccount)
 	if err == nil {
 		t.Error("NewClient() should fail with invalid hostname")
 	}
-	if !contains(err.Error(), "invalid account configuration") {
+	if !strings.Contains(err.Error(), "invalid account configuration") {
 		t.Errorf("NewClient() error should mention invalid configuration, got: %v", err)
 	}
 }
 
 // Helper functions
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(s) > len(substr) && 
-			(s[:len(substr)] == substr || 
-			 s[len(s)-len(substr):] == substr ||
-			 indexOf(s, substr) >= 0)))
-}
-
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
 
 // Benchmark tests
 func BenchmarkGetAddressString(b *testing.B) {
@@ -316,11 +312,13 @@ func BenchmarkGetAddressString(b *testing.B) {
 
 func BenchmarkValidateAccount(b *testing.B) {
 	account := config.Account{
-		Name:     "Test Account",
-		Host:     "imap.example.com",
-		Port:     993,
-		Username: "user@example.com",
-		UseSSL:   true,
+		BaseAccount: config.BaseAccount{
+			Name:     "Test Account",
+			Host:     "imap.example.com",
+			Port:     993,
+			Username: "user@example.com",
+			UseSSL:   true,
+		},
 	}
 	
 	b.ResetTimer()

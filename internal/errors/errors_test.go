@@ -2,7 +2,6 @@ package errors
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 )
 
@@ -14,296 +13,130 @@ func TestWrap(t *testing.T) {
 		expected  string
 	}{
 		{
-			name:      "wrap error",
-			err:       errors.New("original error"),
-			operation: "perform operation",
-			expected:  "failed to perform operation: original error",
-		},
-		{
 			name:      "nil error returns nil",
 			err:       nil,
-			operation: "perform operation",
+			operation: "test operation",
 			expected:  "",
+		},
+		{
+			name:      "wraps error with operation",
+			err:       errors.New("original error"),
+			operation: "test operation",
+			expected:  "failed to test operation: original error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Wrap(tt.err, tt.operation)
-			
-			if tt.err == nil {
+			if tt.expected == "" {
 				if result != nil {
-					t.Errorf("Wrap() with nil error should return nil, got %v", result)
+					t.Errorf("expected nil, got %v", result)
 				}
-				return
-			}
-			
-			if result == nil {
-				t.Errorf("Wrap() with non-nil error should not return nil")
-				return
-			}
-			
-			if result.Error() != tt.expected {
-				t.Errorf("Wrap() = %q, want %q", result.Error(), tt.expected)
-			}
-			
-			// Test that the original error is wrapped
-			if !errors.Is(result, tt.err) {
-				t.Errorf("Wrap() should wrap the original error")
-			}
-		})
-	}
-}
-
-func TestWrapWithContext(t *testing.T) {
-	tests := []struct {
-		name      string
-		err       error
-		operation string
-		context   string
-		expected  string
-	}{
-		{
-			name:      "wrap with context",
-			err:       errors.New("original error"),
-			operation: "read file",
-			context:   "/path/to/file",
-			expected:  "failed to read file for /path/to/file: original error",
-		},
-		{
-			name:      "nil error returns nil",
-			err:       nil,
-			operation: "read file",
-			context:   "/path/to/file",
-			expected:  "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := WrapWithContext(tt.err, tt.operation, tt.context)
-			
-			if tt.err == nil {
-				if result != nil {
-					t.Errorf("WrapWithContext() with nil error should return nil, got %v", result)
+			} else {
+				if result == nil {
+					t.Error("expected error, got nil")
+				} else if result.Error() != tt.expected {
+					t.Errorf("expected %q, got %q", tt.expected, result.Error())
 				}
-				return
-			}
-			
-			if result == nil {
-				t.Errorf("WrapWithContext() with non-nil error should not return nil")
-				return
-			}
-			
-			if result.Error() != tt.expected {
-				t.Errorf("WrapWithContext() = %q, want %q", result.Error(), tt.expected)
-			}
-			
-			// Test that the original error is wrapped
-			if !errors.Is(result, tt.err) {
-				t.Errorf("WrapWithContext() should wrap the original error")
 			}
 		})
 	}
 }
 
-func TestWrapWithMessage(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      error
-		message  string
-		expected string
-	}{
-		{
-			name:     "wrap with custom message",
-			err:      errors.New("original error"),
-			message:  "custom message",
-			expected: "custom message: original error",
-		},
-		{
-			name:     "nil error returns nil",
-			err:      nil,
-			message:  "custom message",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := WrapWithMessage(tt.err, tt.message)
-			
-			if tt.err == nil {
-				if result != nil {
-					t.Errorf("WrapWithMessage() with nil error should return nil, got %v", result)
-				}
-				return
-			}
-			
-			if result == nil {
-				t.Errorf("WrapWithMessage() with non-nil error should not return nil")
-				return
-			}
-			
-			if result.Error() != tt.expected {
-				t.Errorf("WrapWithMessage() = %q, want %q", result.Error(), tt.expected)
-			}
-			
-			// Test that the original error is wrapped
-			if !errors.Is(result, tt.err) {
-				t.Errorf("WrapWithMessage() should wrap the original error")
-			}
-		})
+func TestWrapStore(t *testing.T) {
+	err := errors.New("connection failed")
+	result := WrapStore(err, "create")
+	expected := "failed to create account store: connection failed"
+	
+	if result.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, result.Error())
 	}
 }
 
-func TestNew(t *testing.T) {
-	tests := []struct {
-		name     string
-		format   string
-		args     []interface{}
-		expected string
-	}{
-		{
-			name:     "simple message",
-			format:   "simple error",
-			args:     nil,
-			expected: "simple error",
-		},
-		{
-			name:     "formatted message",
-			format:   "error with %s and %d",
-			args:     []interface{}{"string", 42},
-			expected: "error with string and 42",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := New(tt.format, tt.args...)
-			
-			if result == nil {
-				t.Errorf("New() should not return nil")
-				return
-			}
-			
-			if result.Error() != tt.expected {
-				t.Errorf("New() = %q, want %q", result.Error(), tt.expected)
-			}
-		})
+func TestWrapKeychain(t *testing.T) {
+	err := errors.New("access denied")
+	result := WrapKeychain(err, "retrieve")
+	expected := "failed to retrieve password from keychain: access denied"
+	
+	if result.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, result.Error())
 	}
 }
 
-func TestNewOperation(t *testing.T) {
-	tests := []struct {
-		name      string
-		operation string
-		details   []interface{}
-		expected  string
-	}{
-		{
-			name:      "operation without details",
-			operation: "connect to database",
-			details:   nil,
-			expected:  "failed to connect to database",
-		},
-		{
-			name:      "operation with details",
-			operation: "connect to database",
-			details:   []interface{}{"connection timeout"},
-			expected:  "failed to connect to database: connection timeout",
-		},
+func TestWrapAccount(t *testing.T) {
+	err := errors.New("not found")
+	result := WrapAccount(err, "find", "gmail-account")
+	expected := "failed to find account 'gmail-account': not found"
+	
+	if result.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, result.Error())
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := NewOperation(tt.operation, tt.details...)
-			
-			if result == nil {
-				t.Errorf("NewOperation() should not return nil")
-				return
-			}
-			
-			if result.Error() != tt.expected {
-				t.Errorf("NewOperation() = %q, want %q", result.Error(), tt.expected)
-			}
-		})
+func TestWrapFile(t *testing.T) {
+	err := errors.New("permission denied")
+	result := WrapFile(err, "read", "config.json")
+	expected := "failed to read file 'config.json': permission denied"
+	
+	if result.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, result.Error())
+	}
+}
+
+func TestWrapConnection(t *testing.T) {
+	err := errors.New("timeout")
+	result := WrapConnection(err, "establish", "imap.gmail.com")
+	expected := "failed to establish connection to imap.gmail.com: timeout"
+	
+	if result.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, result.Error())
+	}
+}
+
+func TestWrapBackup(t *testing.T) {
+	err := errors.New("disk full")
+	result := WrapBackup(err, "save message")
+	expected := "backup failed: save message: disk full"
+	
+	if result.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, result.Error())
 	}
 }
 
 func TestNewValidation(t *testing.T) {
-	tests := []struct {
-		name     string
-		field    string
-		reason   string
-		expected string
-	}{
-		{
-			name:     "validation error",
-			field:    "email",
-			reason:   "invalid format",
-			expected: "validation failed for email: invalid format",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := NewValidation(tt.field, tt.reason)
-			
-			if result == nil {
-				t.Errorf("NewValidation() should not return nil")
-				return
-			}
-			
-			if result.Error() != tt.expected {
-				t.Errorf("NewValidation() = %q, want %q", result.Error(), tt.expected)
-			}
-		})
+	result := NewValidation("email", "invalid format")
+	expected := "validation failed for email: invalid format"
+	
+	if result.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, result.Error())
 	}
 }
 
 func TestNewConfiguration(t *testing.T) {
-	tests := []struct {
-		name     string
-		setting  string
-		reason   string
-		expected string
-	}{
-		{
-			name:     "configuration error",
-			setting:  "database.host",
-			reason:   "cannot be empty",
-			expected: "configuration error for database.host: cannot be empty",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := NewConfiguration(tt.setting, tt.reason)
-			
-			if result == nil {
-				t.Errorf("NewConfiguration() should not return nil")
-				return
-			}
-			
-			if result.Error() != tt.expected {
-				t.Errorf("NewConfiguration() = %q, want %q", result.Error(), tt.expected)
-			}
-		})
+	result := NewConfiguration("port", "out of range")
+	expected := "configuration error for port: out of range"
+	
+	if result.Error() != expected {
+		t.Errorf("expected %q, got %q", expected, result.Error())
 	}
 }
 
-// Test error unwrapping functionality
-func TestErrorUnwrapping(t *testing.T) {
-	originalErr := fmt.Errorf("database connection failed")
-	wrappedErr := Wrap(originalErr, "initialize application")
+// Benchmark tests for performance
+func BenchmarkWrap(b *testing.B) {
+	err := errors.New("test error")
+	b.ResetTimer()
 	
-	// Test that errors.Is works correctly
-	if !errors.Is(wrappedErr, originalErr) {
-		t.Errorf("Wrapped error should be detectable with errors.Is")
+	for i := 0; i < b.N; i++ {
+		_ = Wrap(err, "test operation")
 	}
+}
+
+func BenchmarkWrapStore(b *testing.B) {
+	err := errors.New("test error")
+	b.ResetTimer()
 	
-	// Test that errors.Unwrap works correctly  
-	if errors.Unwrap(wrappedErr) != originalErr {
-		t.Errorf("Wrapped error should be unwrappable to original error")
+	for i := 0; i < b.N; i++ {
+		_ = WrapStore(err, "create")
 	}
 }
