@@ -4,14 +4,14 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"imap-backup/internal/errors"
+	"imap-backup/internal/filesystem"
 	"imap-backup/internal/imap"
 	"imap-backup/internal/security"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 )
 
 type FileStorage struct {
@@ -43,7 +43,7 @@ func (fs *FileStorage) GetExistingUIDs(folderName string) (map[uint32]bool, erro
 func (fs *FileStorage) GetExistingUIDsWithDelimiter(folderName, delimiter string) (map[uint32]bool, error) {
 	folderPath, err := fs.getFolderPathWithDelimiter(folderName, delimiter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get folder path: %w", err)
+		return nil, errors.Wrap(err, "get folder path")
 	}
 	
 	uids := make(map[uint32]bool)
@@ -86,17 +86,17 @@ func (fs *FileStorage) SaveMessage(folderName string, msg *imap.Message) error {
 func (fs *FileStorage) SaveMessageWithDelimiter(folderName, delimiter string, msg *imap.Message) error {
 	// Validate folder name for security
 	if err := security.ValidateFolderName(folderName); err != nil {
-		return fmt.Errorf("invalid folder name: %w", err)
+		return errors.WrapWithMessage(err, "invalid folder name")
 	}
 	
 	folderPath, err := fs.getFolderPathWithDelimiter(folderName, delimiter)
 	if err != nil {
-		return fmt.Errorf("failed to get secure folder path: %w", err)
+		return errors.Wrap(err, "get secure folder path")
 	}
 	
 	// Use secure directory permissions
-	if err := os.MkdirAll(folderPath, security.SecureDirectoryMode); err != nil {
-		return fmt.Errorf("failed to create folder directory: %w", err)
+	if err := filesystem.EnsureSecureDir(folderPath); err != nil {
+		return err
 	}
 
 	// Calculate checksum for integrity
@@ -127,17 +127,17 @@ func (fs *FileStorage) SaveMessageWithDelimiter(folderName, delimiter string, ms
 	metadataPath := filepath.Join(folderPath, fmt.Sprintf("%s.json", baseFilename))
 	metadataData, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return errors.Wrap(err, "marshal metadata")
 	}
 
-	if err := os.WriteFile(metadataPath, metadataData, security.SecureFileMode); err != nil {
-		return fmt.Errorf("failed to write metadata: %w", err)
+	if err := filesystem.WriteSecureFile(metadataPath, metadataData); err != nil {
+		return err
 	}
 
 	// Save raw message
 	rawPath := filepath.Join(folderPath, fmt.Sprintf("%s.eml", baseFilename))
-	if err := os.WriteFile(rawPath, msg.Raw, security.SecureFileMode); err != nil {
-		return fmt.Errorf("failed to write raw message: %w", err)
+	if err := filesystem.WriteSecureFile(rawPath, msg.Raw); err != nil {
+		return err
 	}
 
 	return nil
@@ -150,20 +150,20 @@ func (fs *FileStorage) SaveAttachment(folderName string, msg *imap.Message, atta
 func (fs *FileStorage) SaveAttachmentWithDelimiter(folderName, delimiter string, msg *imap.Message, attachment imap.Attachment) error {
 	// Validate folder name for security
 	if err := security.ValidateFolderName(folderName); err != nil {
-		return fmt.Errorf("invalid folder name: %w", err)
+		return errors.WrapWithMessage(err, "invalid folder name")
 	}
 	
 	attachmentDir, err := fs.getAttachmentDirWithDelimiter(folderName, delimiter, msg)
 	if err != nil {
-		return fmt.Errorf("failed to get secure attachment directory: %w", err)
+		return errors.Wrap(err, "get secure attachment directory")
 	}
 	
-	if err := os.MkdirAll(attachmentDir, security.SecureDirectoryMode); err != nil {
-		return fmt.Errorf("failed to create attachment directory: %w", err)
+	if err := filesystem.EnsureSecureDir(attachmentDir); err != nil {
+		return err
 	}
 
 	// Sanitize filename
-	filename := sanitizeFilename(attachment.Filename)
+	filename := security.SanitizeFilename(attachment.Filename)
 	attachmentPath := filepath.Join(attachmentDir, filename)
 
 	// Handle duplicate filenames
@@ -180,8 +180,8 @@ func (fs *FileStorage) SaveAttachmentWithDelimiter(folderName, delimiter string,
 		counter++
 	}
 
-	if err := os.WriteFile(attachmentPath, attachment.Data, security.SecureFileMode); err != nil {
-		return fmt.Errorf("failed to write attachment: %w", err)
+	if err := filesystem.WriteSecureFile(attachmentPath, attachment.Data); err != nil {
+		return err
 	}
 
 	return nil
@@ -194,7 +194,7 @@ func (fs *FileStorage) getFolderPath(folderName string) (string, error) {
 func (fs *FileStorage) getFolderPathWithDelimiter(folderName, delimiter string) (string, error) {
 	// Validate folder name first
 	if err := security.ValidateFolderName(folderName); err != nil {
-		return "", fmt.Errorf("invalid folder name: %w", err)
+		return "", errors.WrapWithMessage(err, "invalid folder name")
 	}
 	
 	// Use the actual IMAP delimiter if provided, otherwise try to detect
@@ -257,116 +257,6 @@ func (fs *FileStorage) getAttachmentDirWithDelimiter(folderName, delimiter strin
 	return security.SecurePath(fs.basePath, relativePath)
 }
 
-func sanitizeFilename(filename string) string {
-	// First, ensure the filename is valid UTF-8
-	filename = sanitizeUTF8(filename)
-	
-	// Handle empty filename
-	if filename == "" {
-		return "untitled"
-	}
-
-	// Remove or replace characters that are problematic in filenames
-	replacements := map[string]string{
-		"/":  "_",
-		"\\": "_",
-		":":  "_",
-		"*":  "_",
-		"?":  "_",
-		"\"": "_",
-		"<":  "_",
-		">":  "_",
-		"|":  "_",
-		"\x00": "_", // null byte
-		"\r": "_",   // carriage return
-		"\n": "_",   // newline
-	}
-
-	result := filename
-	for old, new := range replacements {
-		result = strings.ReplaceAll(result, old, new)
-	}
-
-	// Remove control characters and other problematic Unicode characters
-	result = sanitizeUnicodeChars(result)
-
-	// Remove leading/trailing dots and spaces (problematic on Windows)
-	result = strings.Trim(result, ". ")
-
-	// Ensure it's not empty or only underscores after sanitization
-	if result == "" || strings.Trim(result, "_") == "" {
-		result = "untitled"
-	}
-
-	// Truncate if too long (filesystem limit)
-	if len(result) > 255 {
-		ext := filepath.Ext(result)
-		name := strings.TrimSuffix(result, ext)
-		maxNameLen := 255 - len(ext)
-		if maxNameLen < 1 {
-			maxNameLen = 1
-		}
-		result = name[:maxNameLen] + ext
-	}
-
-	return result
-}
-
-// sanitizeUTF8 converts invalid UTF-8 sequences to replacement characters
-func sanitizeUTF8(s string) string {
-	if utf8.ValidString(s) {
-		return s
-	}
-
-	// Convert invalid UTF-8 to valid UTF-8 by replacing invalid sequences
-	var result strings.Builder
-	result.Grow(len(s))
-
-	for i, w := 0, 0; i < len(s); i += w {
-		r, width := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && width == 1 {
-			// Invalid UTF-8 sequence, replace with underscore
-			result.WriteRune('_')
-			w = 1
-		} else {
-			result.WriteRune(r)
-			w = width
-		}
-	}
-
-	return result.String()
-}
-
-// sanitizeUnicodeChars removes or replaces problematic Unicode characters
-func sanitizeUnicodeChars(s string) string {
-	var result strings.Builder
-	result.Grow(len(s))
-
-	for _, r := range s {
-		switch {
-		case r == 0xFEFF || r == 0x200B || r == 0x2060:
-			// Remove BOM and invisible/zero-width characters
-			continue
-		case unicode.IsControl(r) && r != '\t':
-			// Replace control characters (except tab) with underscore
-			result.WriteRune('_')
-		case unicode.Is(unicode.Cf, r):
-			// Replace format characters with underscore (except BOM which we already handled)
-			result.WriteRune('_')
-		case unicode.Is(unicode.Cs, r):
-			// Replace surrogate characters with underscore
-			result.WriteRune('_')
-		case unicode.Is(unicode.Co, r):
-			// Replace private use characters with underscore
-			result.WriteRune('_')
-		default:
-			// Keep the character
-			result.WriteRune(r)
-		}
-	}
-
-	return result.String()
-}
 
 // generateMessageFilename creates a unique filename using sender and timestamp
 // Format: <Sender Name>_YYYY-MM-DD_HH_MM_SS
@@ -381,7 +271,7 @@ func generateMessageFilename(msg *imap.Message) string {
 	baseFilename := fmt.Sprintf("%s_%s", senderName, timestamp)
 	
 	// Sanitize the filename
-	return sanitizeFilename(baseFilename)
+	return security.SanitizeFilename(baseFilename)
 }
 
 // extractSenderName extracts a clean sender name from email address
@@ -398,7 +288,7 @@ func extractSenderName(from string) string {
 			// Remove quotes if present
 			name = strings.Trim(name, "\"")
 			if name != "" {
-				return sanitizeForFilename(name)
+				return security.SanitizeForEmailName(name, 50)
 			}
 		}
 	}
@@ -409,40 +299,10 @@ func extractSenderName(from string) string {
 		localPart := from[:atIndex]
 		// Remove common prefixes and clean up
 		localPart = strings.ReplaceAll(localPart, ".", "_")
-		return sanitizeForFilename(localPart)
+		return security.SanitizeForEmailName(localPart, 50)
 	}
 	
 	// If all else fails, use the whole string
-	return sanitizeForFilename(from)
+	return security.SanitizeForEmailName(from, 50)
 }
 
-// sanitizeForFilename removes problematic characters for filenames
-func sanitizeForFilename(name string) string {
-	// First sanitize encoding issues
-	name = sanitizeUTF8(name)
-	
-	// Replace spaces and problematic characters
-	name = strings.ReplaceAll(name, " ", "_")
-	name = strings.ReplaceAll(name, ".", "_")
-	name = strings.ReplaceAll(name, ",", "_")
-	name = strings.ReplaceAll(name, ";", "_")
-	name = strings.ReplaceAll(name, "'", "")
-	name = strings.ReplaceAll(name, "\"", "")
-	
-	// Apply the general sanitizer (which handles more edge cases)
-	name = sanitizeFilename(name)
-	
-	// Limit length for filename component
-	if len(name) > 50 {
-		name = name[:50]
-	}
-	
-	// Ensure it's not empty
-	if name == "" || name == "_" {
-		name = "Unknown"
-	}
-	
-	return name
-}
-
-// Note: sanitizeFolderName removed - now using security.SanitizeFolderName
