@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"imap-backup/internal/cmdutil"
 	"imap-backup/internal/config"
 	"strings"
 
@@ -18,11 +19,12 @@ This helps you see what accounts are available for backup.`,
 
 func init() {
 	rootCmd.AddCommand(accountsCmd)
-	accountsCmd.Flags().BoolP("show-passwords", "p", false, "show passwords (use with caution)")
+	cmdutil.AddAccountFlags(accountsCmd)
 }
 
 func runAccounts(cmd *cobra.Command, args []string) error {
-	showPasswords, _ := cmd.Flags().GetBool("show-passwords")
+	flags := cmdutil.GetCommonFlags(cmd)
+	showPasswords := flags.ShowPasswords
 	
 	fmt.Println("Discovering email accounts from Mac's Internet Accounts and Mail.app...")
 	fmt.Println()

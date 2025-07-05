@@ -9,15 +9,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-type Account struct {
-	Name     string `mapstructure:"name"`
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-	UseSSL   bool   `mapstructure:"use_ssl"`
-	AuthType string `mapstructure:"auth_type"`
-}
+// Account is now defined in account.go to eliminate duplication
 
 type Config struct {
 	Accounts []Account `mapstructure:"accounts"`

@@ -7,26 +7,10 @@ import (
 	"unicode/utf8"
 )
 
-// Common character replacement maps for different sanitization needs
+// Base character replacement maps
 var (
-	// FilenameCharMap defines characters that need to be replaced in filenames
-	FilenameCharMap = map[string]string{
-		"/":    "_",
-		"\\":   "_",
-		":":    "_",
-		"*":    "_",
-		"?":    "_",
-		"\"":   "_",
-		"<":    "_",
-		">":    "_",
-		"|":    "_",
-		"\x00": "_", // null byte
-		"\r":   "_", // carriage return
-		"\n":   "_", // newline
-	}
-
-	// FolderCharMap defines characters that need to be replaced in folder names
-	FolderCharMap = map[string]string{
+	// Common characters that are problematic across contexts
+	baseUnsafeChars = map[string]string{
 		":":    "_",
 		"*":    "_",
 		"?":    "_",
@@ -37,8 +21,20 @@ var (
 		"\x00": "_", // null byte
 	}
 
-	// EmailCharMap defines characters that need to be replaced in email-derived names
-	EmailCharMap = map[string]string{
+	// Additional characters for filesystem paths
+	pathSeparators = map[string]string{
+		"/":  "_",
+		"\\": "_",
+	}
+
+	// Control characters for files
+	controlChars = map[string]string{
+		"\r": "_", // carriage return
+		"\n": "_", // newline
+	}
+
+	// Email-specific characters
+	emailSpecificChars = map[string]string{
 		" ":  "_",
 		".":  "_",
 		",":  "_",
@@ -46,6 +42,36 @@ var (
 		"'":  "",
 		"\"": "",
 	}
+)
+
+// Composed character maps for different use cases
+var (
+	// FilenameCharMap defines characters that need to be replaced in filenames
+	FilenameCharMap = func() map[string]string {
+		result := make(map[string]string)
+		for k, v := range baseUnsafeChars {
+			result[k] = v
+		}
+		for k, v := range pathSeparators {
+			result[k] = v
+		}
+		for k, v := range controlChars {
+			result[k] = v
+		}
+		return result
+	}()
+
+	// FolderCharMap defines characters that need to be replaced in folder names
+	FolderCharMap = func() map[string]string {
+		result := make(map[string]string)
+		for k, v := range baseUnsafeChars {
+			result[k] = v
+		}
+		return result
+	}()
+
+	// EmailCharMap defines characters that need to be replaced in email-derived names
+	EmailCharMap = emailSpecificChars
 )
 
 // SanitizeString applies character replacements from the provided map
