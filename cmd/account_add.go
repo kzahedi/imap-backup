@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"imap-backup/internal/config"
 	"imap-backup/internal/keychain"
-	"strings"
+	"imap-backup/internal/providers"
 
 	"github.com/spf13/cobra"
 )
@@ -127,49 +127,12 @@ func runAddAccount(cmd *cobra.Command, args []string) error {
 }
 
 func detectAuthTypeForEmail(email string) string {
-	email = strings.ToLower(email)
-	
-	oauthProviders := []string{
-		"gmail.com", "googlemail.com",
-		"outlook.com", "hotmail.com", "live.com",
-		"yahoo.com",
+	if providers.IsOAuth2Provider(email) {
+		return "oauth2"
 	}
-	
-	for _, provider := range oauthProviders {
-		if strings.Contains(email, provider) {
-			return "oauth2"
-		}
-	}
-	
 	return "password"
 }
 
 func getProviderSettings(email string) (host string, port int, useSSL bool) {
-	email = strings.ToLower(email)
-	
-	providers := map[string]struct {
-		host   string
-		port   int
-		useSSL bool
-	}{
-		"gmail.com":      {"imap.gmail.com", 993, true},
-		"googlemail.com": {"imap.gmail.com", 993, true},
-		"outlook.com":    {"outlook.office365.com", 993, true},
-		"hotmail.com":    {"outlook.office365.com", 993, true},
-		"live.com":       {"outlook.office365.com", 993, true},
-		"yahoo.com":      {"imap.mail.yahoo.com", 993, true},
-		"icloud.com":     {"imap.mail.me.com", 993, true},
-		"me.com":         {"imap.mail.me.com", 993, true},
-		"mac.com":        {"imap.mail.me.com", 993, true},
-		"aol.com":        {"imap.aol.com", 993, true},
-	}
-	
-	for domain, settings := range providers {
-		if strings.Contains(email, domain) {
-			return settings.host, settings.port, settings.useSSL
-		}
-	}
-	
-	// Default settings
-	return "", 993, true
+	return providers.GetIMAPSettings(email)
 }

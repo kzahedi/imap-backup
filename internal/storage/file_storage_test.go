@@ -2,6 +2,7 @@ package storage
 
 import (
 	"imap-backup/internal/imap"
+	"imap-backup/internal/security"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -189,7 +190,7 @@ func TestSanitizeFilename(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizeFilename(tt.input)
+			result := security.SanitizeFilename(tt.input)
 			if result != tt.expected {
 				t.Errorf("sanitizeFilename() = %q, want %q", result, tt.expected)
 			}
@@ -592,7 +593,7 @@ func TestSanitizeUTF8(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizeUTF8(tt.input)
+			result := security.SanitizeUTF8(tt.input)
 			if result != tt.expected {
 				t.Errorf("sanitizeUTF8() = %q, want %q", result, tt.expected)
 			}
@@ -638,7 +639,7 @@ func TestSanitizeUnicodeChars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizeUnicodeChars(tt.input)
+			result := security.SanitizeUnicodeChars(tt.input)
 			if result != tt.expected {
 				t.Errorf("sanitizeUnicodeChars() = %q, want %q", result, tt.expected)
 			}
@@ -651,7 +652,7 @@ func BenchmarkSanitizeFilename(b *testing.B) {
 	filename := "complex:file*name?with<many>problematic|chars.txt"
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sanitizeFilename(filename)
+		security.SanitizeFilename(filename)
 	}
 }
 
