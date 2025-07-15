@@ -5,11 +5,17 @@ imap-backup
 *.so
 *.dylib
 
-# Test and backup directories
+# Test and backup directories - SENSITIVE DATA
 backup/
 test-backup/
 test-real/
 test-*/
+**/backup/
+**/test-*/
+**/*@*/**
+**/keyan@*/**
+**/personal/**
+**/real-data/**
 
 # Go build artifacts
 *.test
@@ -21,6 +27,12 @@ test-*/
 *.yml
 *.json
 .imap-backup*
+.env
+.env.local
+.env.*.local
+secrets.txt
+credentials.txt
+passwords.txt
 
 # OS generated files
 .DS_Store
@@ -38,10 +50,18 @@ Thumbs.db
 *.swo
 *~
 
-# Temporary files
+# Temporary files and logs (may contain sensitive data)
 *.tmp
 *.temp
 *.log
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*.swo
+core.*
+dump.*
 
 # SonarQube analysis files
 .scannerwork/
