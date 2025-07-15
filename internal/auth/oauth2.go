@@ -44,6 +44,20 @@ func GetGoogleOAuth2Config() *oauth2.Config {
 	}
 }
 
+// ValidateOAuth2Config validates that OAuth2 configuration has required fields
+func ValidateOAuth2Config(config *oauth2.Config) error {
+	if config.ClientID == "" {
+		return fmt.Errorf("OAuth2 ClientID is required but not configured")
+	}
+	if config.ClientSecret == "" {
+		return fmt.Errorf("OAuth2 ClientSecret is required but not configured")
+	}
+	if len(config.Scopes) == 0 {
+		return fmt.Errorf("OAuth2 Scopes are required but not configured")
+	}
+	return nil
+}
+
 // GetOAuth2TokenFromMac attempts to get OAuth2 token from Mac's keychain
 func GetOAuth2TokenFromMac(accountName, service string) (*OAuth2Token, error) {
 	// Try multiple approaches to find OAuth2 tokens
