@@ -52,7 +52,7 @@ imap-backup setup
 
 # Or add accounts individually  
 imap-backup account add --name "Gmail" --username your@gmail.com
-imap-backup account add --name "Work" --username work@company.com
+imap-backup account add --name "Work" --username work@example.com
 ```
 
 ### 2. Grant System Permissions
@@ -254,7 +254,7 @@ nano ~/.imap-backup/weekly-backup.sh
 ```bash
 # Install mail command and configure for email alerts
 # Add to backup script:
-# echo "Backup completed" | mail -s "Email Backup Status" your@email.com
+# echo "Backup completed" | mail -s "Email Backup Status" admin@example.com
 ```
 
 ## ⚠️ Important Notes
