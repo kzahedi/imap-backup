@@ -2,6 +2,8 @@ module imap-backup
 
 go 1.21
 
+// Version: 2.0.0
+
 require (
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.18.0

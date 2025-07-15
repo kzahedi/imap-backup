@@ -1,4 +1,4 @@
-# IMAP Backup Tool
+# IMAP Backup Tool v2.0.0
 
 A fast, efficient command-line tool for backing up IMAP email accounts written in Go.
 

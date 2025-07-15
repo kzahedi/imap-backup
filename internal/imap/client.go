@@ -37,8 +37,9 @@ const (
 )
 
 type Client struct {
-	conn    *client.Client
-	account config.Account
+	conn        *client.Client
+	account     config.Account
+	rateLimiter *RateLimiter
 }
 
 type Folder struct {
@@ -111,8 +112,9 @@ func NewClient(ctx context.Context, account config.Account) (*Client, error) {
 	}
 
 	return &Client{
-		conn:    c,
-		account: account,
+		conn:        c,
+		account:     account,
+		rateLimiter: DefaultRateLimiter(),
 	}, nil
 }
 
@@ -142,6 +144,14 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) ListFolders() ([]*Folder, error) {
+	// Rate limit the List operation
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultReadTimeout)
+	defer cancel()
+	
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit exceeded: %w", err)
+	}
+	
 	mailboxes := make(chan *imap.MailboxInfo, 10)
 	done := make(chan error, 1)
 	go func() {
@@ -166,6 +176,14 @@ func (c *Client) ListFolders() ([]*Folder, error) {
 }
 
 func (c *Client) GetMessages(folderName string, existingUIDs map[uint32]bool) ([]*Message, error) {
+	// Rate limit the Select operation
+	ctx, cancel := context.WithTimeout(context.Background(), IMAPSelectTimeout)
+	defer cancel()
+	
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit exceeded: %w", err)
+	}
+	
 	// Select folder using EXAMINE for read-only access (preserves read/unread status)
 	mbox, err := c.conn.Select(folderName, true)
 	if err != nil {
@@ -180,6 +198,14 @@ func (c *Client) GetMessages(folderName string, existingUIDs map[uint32]bool) ([
 	seqset := new(imap.SeqSet)
 	seqset.AddRange(1, mbox.Messages)
 
+	// Rate limit the Fetch operation
+	fetchCtx, fetchCancel := context.WithTimeout(context.Background(), IMAPFetchTimeout)
+	defer fetchCancel()
+	
+	if err := c.rateLimiter.Wait(fetchCtx); err != nil {
+		return nil, fmt.Errorf("rate limit exceeded for fetch: %w", err)
+	}
+	
 	messages := make(chan *imap.Message, 10)
 	done := make(chan error, 1)
 	go func() {
@@ -264,52 +290,81 @@ func (c *Client) GetMessages(folderName string, existingUIDs map[uint32]bool) ([
 }
 
 func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
-	// Get the raw message - RFC822 fetch puts data in msg.Body with nil key
-	var raw []byte
-	
-	
-	// Look for RFC822 data (stored with nil key when using FetchRFC822)
-	if r, ok := msg.Body[nil]; ok && r != nil {
-		// Use limited reader to prevent memory exhaustion
-		limitedReader := io.LimitReader(r, MaxMessageSize)
-		data, err := io.ReadAll(limitedReader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read RFC822 body: %w", err)
-		}
-		
-		// Check if message was truncated
-		if len(data) == MaxMessageSize {
-			log.Printf("Warning: Message UID %d truncated at %d bytes", msg.Uid, MaxMessageSize)
-		}
-		
-		raw = data
-	} else {
-		// Fallback: try any available body section
-		for section, r := range msg.Body {
-			if r != nil {
-				// Use limited reader to prevent memory exhaustion
-				limitedReader := io.LimitReader(r, MaxMessageSize)
-				data, err := io.ReadAll(limitedReader)
-				if err != nil {
-					log.Printf("Failed to read body section %v: %v", section, err)
-					continue
-				}
-				
-				// Check if message was truncated
-				if len(data) == MaxMessageSize {
-					log.Printf("Warning: Message UID %d section %v truncated at %d bytes", msg.Uid, section, MaxMessageSize)
-				}
-				
-				raw = data
-				break
-			}
-		}
-	}
-	
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("no message body found")
+	// Extract raw message data
+	raw, err := c.extractRawMessageData(msg)
+	if err != nil {
+		return nil, err
 	}
 
+	// Parse the message entity
+	entity, err := c.parseMessageEntity(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract headers
+	headers := c.extractHeaders(entity)
+
+	// Create base message structure
+	parsedMsg := &Message{
+		UID:     msg.Uid,
+		Subject: msg.Envelope.Subject,
+		From:    getAddressString(msg.Envelope.From),
+		To:      getAddressString(msg.Envelope.To),
+		Date:    msg.Envelope.Date,
+		Flags:   msg.Flags,
+		Headers: headers,
+		Raw:     raw,
+	}
+
+	// Parse mail parts (body and attachments)
+	if err := c.parseMailParts(entity, parsedMsg, msg.Uid); err != nil {
+		return nil, err
+	}
+
+	return parsedMsg, nil
+}
+
+// extractRawMessageData extracts raw message data from IMAP message body
+func (c *Client) extractRawMessageData(msg *imap.Message) ([]byte, error) {
+	// Look for RFC822 data (stored with nil key when using FetchRFC822)
+	if r, ok := msg.Body[nil]; ok && r != nil {
+		return c.readLimitedData(r, msg.Uid, "RFC822 body")
+	}
+
+	// Fallback: try any available body section
+	for section, r := range msg.Body {
+		if r != nil {
+			data, err := c.readLimitedData(r, msg.Uid, fmt.Sprintf("section %v", section))
+			if err != nil {
+				log.Printf("Failed to read body section %v: %v", section, err)
+				continue
+			}
+			return data, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no message body found")
+}
+
+// readLimitedData reads data with size limits and truncation warnings
+func (c *Client) readLimitedData(reader io.Reader, uid uint32, context string) ([]byte, error) {
+	limitedReader := io.LimitReader(reader, MaxMessageSize)
+	data, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", context, err)
+	}
+
+	// Check if message was truncated
+	if len(data) == MaxMessageSize {
+		log.Printf("Warning: Message UID %d %s truncated at %d bytes", uid, context, MaxMessageSize)
+	}
+
+	return data, nil
+}
+
+// parseMessageEntity parses raw message data into a message entity
+func (c *Client) parseMessageEntity(raw []byte) (*message.Entity, error) {
 	// Set our custom charset reader globally for this parsing
 	originalCharsetReader := message.CharsetReader
 	message.CharsetReader = func(charsetName string, input io.Reader) (io.Reader, error) {
@@ -325,7 +380,11 @@ func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
 		return nil, fmt.Errorf("failed to parse message: %w", err)
 	}
 
-	// Extract headers
+	return entity, nil
+}
+
+// extractHeaders extracts all headers from a message entity
+func (c *Client) extractHeaders(entity *message.Entity) map[string][]string {
 	headers := make(map[string][]string)
 	headerFields := entity.Header.Fields()
 	for headerFields.Next() {
@@ -333,22 +392,13 @@ func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
 		value := headerFields.Value()
 		headers[key] = append(headers[key], value)
 	}
+	return headers
+}
 
-	// Parse as mail message
+// parseMailParts parses mail parts (body and attachments) from the message entity
+func (c *Client) parseMailParts(entity *message.Entity, parsedMsg *Message, uid uint32) error {
 	mailReader := mail.NewReader(entity)
-	
-	parsedMsg := &Message{
-		UID:     msg.Uid,
-		Subject: msg.Envelope.Subject,
-		From:    getAddressString(msg.Envelope.From),
-		To:      getAddressString(msg.Envelope.To),
-		Date:    msg.Envelope.Date,
-		Flags:   msg.Flags,
-		Headers: headers,
-		Raw:     raw,
-	}
 
-	// Extract body and attachments with charset handling
 	for {
 		part, err := mailReader.NextPart()
 		if err == io.EOF {
@@ -356,59 +406,66 @@ func (c *Client) parseMessage(msg *imap.Message) (*Message, error) {
 		} else if err != nil {
 			// Log charset errors but continue processing
 			if strings.Contains(err.Error(), "charset") || strings.Contains(err.Error(), "unknown charset") {
-				log.Printf("Charset error in message UID %d: %v (continuing with raw data)", msg.Uid, err)
+				log.Printf("Charset error in message UID %d: %v (continuing with raw data)", uid, err)
 				break
 			}
-			return nil, fmt.Errorf("failed to read message part: %w", err)
+			return fmt.Errorf("failed to read message part: %w", err)
 		}
 
 		switch h := part.Header.(type) {
 		case *mail.InlineHeader:
-			// This is the message body
-			body, charset := c.readBodyWithCharset(part.Body, h.Get("Content-Type"))
-			
-			contentType := h.Get("Content-Type")
-			if strings.Contains(contentType, "text/html") {
-				parsedMsg.HTMLBody = body
-			} else {
-				parsedMsg.Body = body
-			}
-			
-			// Log charset info for debugging (only for non-UTF-8 charsets)
-			if charset != "" && charset != "utf-8" && charset != "UTF-8" {
-				log.Printf("Decoded body from charset %s for message UID %d", charset, msg.Uid)
-			}
-
+			c.processInlinePart(part, h, parsedMsg, uid)
 		case *mail.AttachmentHeader:
-			// This is an attachment
-			filename, _ := h.Filename()
-			if filename == "" {
-				filename = "untitled"
-			}
-
-			// Use limited reader to prevent memory exhaustion from large attachments
-			limitedReader := io.LimitReader(part.Body, MaxMessageSize)
-			data, err := io.ReadAll(limitedReader)
-			if err != nil {
-				log.Printf("Failed to read attachment %s in message UID %d: %v", filename, msg.Uid, err)
-				continue
-			}
-			
-			// Check if attachment was truncated
-			if len(data) == MaxMessageSize {
-				log.Printf("Warning: Attachment %s in message UID %d truncated at %d bytes", filename, msg.Uid, MaxMessageSize)
-			}
-
-			attachment := Attachment{
-				Filename:    filename,
-				ContentType: h.Get("Content-Type"),
-				Data:        data,
-			}
-			parsedMsg.Attachments = append(parsedMsg.Attachments, attachment)
+			c.processAttachmentPart(part, h, parsedMsg, uid)
 		}
 	}
 
-	return parsedMsg, nil
+	return nil
+}
+
+// processInlinePart processes inline message parts (text/html body)
+func (c *Client) processInlinePart(part *mail.Part, header *mail.InlineHeader, parsedMsg *Message, uid uint32) {
+	body, charset := c.readBodyWithCharset(part.Body, header.Get("Content-Type"))
+	
+	contentType := header.Get("Content-Type")
+	if strings.Contains(contentType, "text/html") {
+		parsedMsg.HTMLBody = body
+	} else {
+		parsedMsg.Body = body
+	}
+	
+	// Log charset info for debugging (only for non-UTF-8 charsets)
+	if charset != "" && charset != "utf-8" && charset != "UTF-8" {
+		log.Printf("Decoded body from charset %s for message UID %d", charset, uid)
+	}
+}
+
+// processAttachmentPart processes attachment parts
+func (c *Client) processAttachmentPart(part *mail.Part, header *mail.AttachmentHeader, parsedMsg *Message, uid uint32) {
+	filename, _ := header.Filename()
+	if filename == "" {
+		filename = "untitled"
+	}
+
+	// Use limited reader to prevent memory exhaustion from large attachments
+	limitedReader := io.LimitReader(part.Body, MaxMessageSize)
+	data, err := io.ReadAll(limitedReader)
+	if err != nil {
+		log.Printf("Failed to read attachment %s in message UID %d: %v", filename, uid, err)
+		return
+	}
+	
+	// Check if attachment was truncated
+	if len(data) == MaxMessageSize {
+		log.Printf("Warning: Attachment %s in message UID %d truncated at %d bytes", filename, uid, MaxMessageSize)
+	}
+
+	attachment := Attachment{
+		Filename:    filename,
+		ContentType: header.Get("Content-Type"),
+		Data:        data,
+	}
+	parsedMsg.Attachments = append(parsedMsg.Attachments, attachment)
 }
 
 func getAddressString(addresses []*imap.Address) string {
@@ -442,8 +499,7 @@ func authenticateClient(ctx context.Context, c *client.Client, account config.Ac
 	authType := auth.DetectAuthType(account.Username)
 	
 	if authType == "oauth2" {
-		// Try OAuth2 authentication
-		if err := authenticateOAuth2(c, account); err != nil {
+		if err := tryOAuth2Authentication(c, account); err != nil {
 			log.Printf("OAuth2 authentication failed for %s: %v", account.Username, err)
 			log.Printf("Falling back to password authentication...")
 		} else {
@@ -452,6 +508,16 @@ func authenticateClient(ctx context.Context, c *client.Client, account config.Ac
 	}
 	
 	// Fall back to password authentication
+	return authenticateWithPassword(c, account)
+}
+
+// tryOAuth2Authentication attempts OAuth2 authentication
+func tryOAuth2Authentication(c *client.Client, account config.Account) error {
+	return authenticateOAuth2(c, account)
+}
+
+// authenticateWithPassword performs password-based authentication
+func authenticateWithPassword(c *client.Client, account config.Account) error {
 	if account.Password == "" {
 		return fmt.Errorf("no password provided for account %s", account.Username)
 	}
@@ -461,24 +527,16 @@ func authenticateClient(ctx context.Context, c *client.Client, account config.Ac
 
 // authenticateOAuth2 performs OAuth2 authentication
 func authenticateOAuth2(c *client.Client, account config.Account) error {
-	// Try to get OAuth2 token from Mac's keychain/Internet Accounts
-	token, err := auth.GetOAuth2TokenFromMac(account.Username, "Gmail")
+	// Get OAuth2 token
+	token, err := getOAuth2Token(account.Username)
 	if err != nil {
-		// Try Internet Accounts
-		token, err = auth.GetOAuth2TokenFromAccounts(account.Username)
-		if err != nil {
-			return fmt.Errorf("failed to get OAuth2 token: %w", err)
-		}
+		return fmt.Errorf("failed to get OAuth2 token: %w", err)
 	}
 	
-	// Check if token is expired and refresh if needed
-	if auth.IsTokenExpired(token) && token.RefreshToken != "" {
-		config := auth.GetGoogleOAuth2Config()
-		newToken, err := auth.RefreshOAuth2Token(config, token)
-		if err != nil {
-			return fmt.Errorf("failed to refresh OAuth2 token: %w", err)
-		}
-		token = newToken
+	// Refresh token if needed
+	token, err = refreshTokenIfNeeded(token)
+	if err != nil {
+		return fmt.Errorf("failed to refresh OAuth2 token: %w", err)
 	}
 	
 	// Authenticate using XOAUTH2 mechanism
@@ -486,6 +544,33 @@ func authenticateOAuth2(c *client.Client, account config.Account) error {
 		Username: account.Username,
 		Token:    token.AccessToken,
 	}))
+}
+
+// getOAuth2Token retrieves OAuth2 token from Mac's keychain or Internet Accounts
+func getOAuth2Token(username string) (*auth.OAuth2Token, error) {
+	// Try to get OAuth2 token from Mac's keychain
+	token, err := auth.GetOAuth2TokenFromMac(username, "Gmail")
+	if err != nil {
+		// Try Internet Accounts
+		token, err = auth.GetOAuth2TokenFromAccounts(username)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return token, nil
+}
+
+// refreshTokenIfNeeded refreshes the OAuth2 token if it's expired
+func refreshTokenIfNeeded(token *auth.OAuth2Token) (*auth.OAuth2Token, error) {
+	if auth.IsTokenExpired(token) && token.RefreshToken != "" {
+		config := auth.GetGoogleOAuth2Config()
+		newToken, err := auth.RefreshOAuth2Token(config, token)
+		if err != nil {
+			return nil, err
+		}
+		return newToken, nil
+	}
+	return token, nil
 }
 
 // readBodyWithCharset reads body content and handles charset decoding

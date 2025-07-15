@@ -46,36 +46,239 @@ func GetGoogleOAuth2Config() *oauth2.Config {
 
 // GetOAuth2TokenFromMac attempts to get OAuth2 token from Mac's keychain
 func GetOAuth2TokenFromMac(accountName, service string) (*OAuth2Token, error) {
-	// Try to get OAuth2 token from Mac's keychain
-	// Gmail tokens are often stored in the Internet Accounts system
+	// Try multiple approaches to find OAuth2 tokens
+	token, err := tryKeychainOAuth2Token(accountName, service)
+	if err == nil {
+		return token, nil
+	}
 	
-	// First, try to get the token using security command
-	cmd := exec.Command("security", "find-generic-password", 
-		"-s", service, "-a", accountName, "-w")
+	// Try Internet Accounts integration
+	token, err = tryInternetAccountsOAuth2Token(accountName)
+	if err == nil {
+		return token, nil
+	}
+	
+	// Try Mail.app OAuth2 tokens
+	token, err = tryMailAppOAuth2Token(accountName)
+	if err == nil {
+		return token, nil
+	}
+	
+	return nil, fmt.Errorf("OAuth2 token not found in keychain for %s", accountName)
+}
+
+// tryKeychainOAuth2Token attempts to get OAuth2 token from keychain
+func tryKeychainOAuth2Token(accountName, service string) (*OAuth2Token, error) {
+	// Try different keychain service names
+	serviceNames := []string{
+		service,
+		fmt.Sprintf("Gmail OAuth2 - %s", accountName),
+		fmt.Sprintf("Google OAuth2 - %s", accountName),
+		fmt.Sprintf("imap-backup-oauth2-%s", service),
+	}
+	
+	for _, serviceName := range serviceNames {
+		cmd := exec.Command("security", "find-generic-password", 
+			"-s", serviceName, "-a", accountName, "-w")
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		
+		tokenData := strings.TrimSpace(string(output))
+		if tokenData == "" {
+			continue
+		}
+		
+		// Try to parse as JSON
+		var token OAuth2Token
+		if err := json.Unmarshal([]byte(tokenData), &token); err != nil {
+			// If not JSON, treat as simple access token
+			token.AccessToken = tokenData
+			token.TokenType = "Bearer"
+			token.Expiry = time.Now().Add(time.Hour) // Assume 1 hour expiry
+		}
+		
+		return &token, nil
+	}
+	
+	return nil, fmt.Errorf("OAuth2 token not found in keychain")
+}
+
+// tryInternetAccountsOAuth2Token attempts to get OAuth2 token from Internet Accounts
+func tryInternetAccountsOAuth2Token(accountName string) (*OAuth2Token, error) {
+	// Use system_profiler to get Internet Accounts information
+	cmd := exec.Command("system_profiler", "SPAccountsDataType", "-json")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("OAuth2 token not found in keychain: %w", err)
+		return nil, fmt.Errorf("failed to access Internet Accounts: %w", err)
 	}
 	
-	tokenData := strings.TrimSpace(string(output))
-	if tokenData == "" {
-		return nil, fmt.Errorf("empty OAuth2 token in keychain")
+	var profileData map[string]interface{}
+	if err := json.Unmarshal(output, &profileData); err != nil {
+		return nil, fmt.Errorf("failed to parse Internet Accounts data: %w", err)
 	}
 	
-	// Try to parse as JSON
-	var token OAuth2Token
-	if err := json.Unmarshal([]byte(tokenData), &token); err != nil {
-		// If not JSON, treat as simple access token
-		token.AccessToken = tokenData
-		token.TokenType = "Bearer"
-		token.Expiry = time.Now().Add(time.Hour) // Assume 1 hour expiry
+	// Look for OAuth2 tokens in the accounts data
+	if accountsData, ok := profileData["SPAccountsDataType"].([]interface{}); ok {
+		for _, accountData := range accountsData {
+			if accountMap, ok := accountData.(map[string]interface{}); ok {
+				if token := extractOAuth2FromAccountMap(accountMap, accountName); token != nil {
+					return token, nil
+				}
+			}
+		}
 	}
 	
-	return &token, nil
+	return nil, fmt.Errorf("OAuth2 token not found in Internet Accounts")
+}
+
+// tryMailAppOAuth2Token attempts to get OAuth2 token from Mail.app
+func tryMailAppOAuth2Token(accountName string) (*OAuth2Token, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+	
+	// Look for Mail.app OAuth2 tokens in different versions
+	mailDirs := []string{
+		filepath.Join(homeDir, "Library", "Mail", "V10", "MailData"),
+		filepath.Join(homeDir, "Library", "Mail", "V9", "MailData"),
+		filepath.Join(homeDir, "Library", "Mail", "V8", "MailData"),
+	}
+	
+	for _, mailDir := range mailDirs {
+		accountsFile := filepath.Join(mailDir, "Accounts.plist")
+		if _, err := os.Stat(accountsFile); err == nil {
+			if token := extractOAuth2FromMailApp(accountsFile, accountName); token != nil {
+				return token, nil
+			}
+		}
+	}
+	
+	return nil, fmt.Errorf("OAuth2 token not found in Mail.app")
+}
+
+// extractOAuth2FromAccountMap extracts OAuth2 token from Internet Accounts data
+func extractOAuth2FromAccountMap(accountMap map[string]interface{}, accountName string) *OAuth2Token {
+	// Check if this account matches the requested account name
+	if username, ok := accountMap["username"].(string); ok {
+		if username != accountName {
+			return nil
+		}
+	}
+	
+	// Look for OAuth2 authentication data
+	if authData, ok := accountMap["authentication"].(map[string]interface{}); ok {
+		if authType, ok := authData["type"].(string); ok {
+			if strings.ToLower(authType) == "oauth2" || strings.ToLower(authType) == "oauth" {
+				if accessToken, ok := authData["access_token"].(string); ok {
+					token := &OAuth2Token{
+						AccessToken: accessToken,
+						TokenType:   "Bearer",
+						Expiry:      time.Now().Add(time.Hour),
+					}
+					
+					if refreshToken, ok := authData["refresh_token"].(string); ok {
+						token.RefreshToken = refreshToken
+					}
+					
+					if expiryStr, ok := authData["expiry"].(string); ok {
+						if expiry, err := time.Parse(time.RFC3339, expiryStr); err == nil {
+							token.Expiry = expiry
+						}
+					}
+					
+					return token
+				}
+			}
+		}
+	}
+	
+	return nil
+}
+
+// extractOAuth2FromMailApp extracts OAuth2 token from Mail.app accounts
+func extractOAuth2FromMailApp(accountsFile, accountName string) *OAuth2Token {
+	// Use plutil to convert plist to JSON
+	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", accountsFile)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	
+	var plistData map[string]interface{}
+	if err := json.Unmarshal(output, &plistData); err != nil {
+		return nil
+	}
+	
+	// Look for OAuth2 tokens in Mail.app accounts
+	if mailAccounts, ok := plistData["MailAccounts"].([]interface{}); ok {
+		for _, accountData := range mailAccounts {
+			if accountMap, ok := accountData.(map[string]interface{}); ok {
+				if username, ok := accountMap["Username"].(string); ok {
+					if username == accountName {
+						// Look for OAuth2 authentication in various possible locations
+						if authData, ok := accountMap["Authentication"].(map[string]interface{}); ok {
+							if token := extractOAuth2FromAuthData(authData); token != nil {
+								return token
+							}
+						}
+						
+						// Check IMAP account settings
+						if imapSettings, ok := accountMap["IMAPAccount"].(map[string]interface{}); ok {
+							if authData, ok := imapSettings["Authentication"].(map[string]interface{}); ok {
+								if token := extractOAuth2FromAuthData(authData); token != nil {
+									return token
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	return nil
+}
+
+// extractOAuth2FromAuthData extracts OAuth2 token from authentication data
+func extractOAuth2FromAuthData(authData map[string]interface{}) *OAuth2Token {
+	if authType, ok := authData["Type"].(string); ok {
+		if strings.ToLower(authType) == "oauth2" || strings.ToLower(authType) == "oauth" {
+			if accessToken, ok := authData["AccessToken"].(string); ok {
+				token := &OAuth2Token{
+					AccessToken: accessToken,
+					TokenType:   "Bearer",
+					Expiry:      time.Now().Add(time.Hour),
+				}
+				
+				if refreshToken, ok := authData["RefreshToken"].(string); ok {
+					token.RefreshToken = refreshToken
+				}
+				
+				if expiryStr, ok := authData["Expiry"].(string); ok {
+					if expiry, err := time.Parse(time.RFC3339, expiryStr); err == nil {
+						token.Expiry = expiry
+					}
+				}
+				
+				return token
+			}
+		}
+	}
+	
+	return nil
 }
 
 // GetOAuth2TokenFromAccounts attempts to get OAuth2 token from Internet Accounts
 func GetOAuth2TokenFromAccounts(accountName string) (*OAuth2Token, error) {
+	// Try modern Internet Accounts approach first
+	token, err := tryInternetAccountsOAuth2Token(accountName)
+	if err == nil {
+		return token, nil
+	}
+	
 	// Try to extract OAuth2 token from Internet Accounts plist files
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -205,6 +408,90 @@ func StartOAuth2Flow(config *oauth2.Config) (*OAuth2Token, error) {
 		TokenType:    token.TokenType,
 		Expiry:       token.Expiry,
 	}, nil
+}
+
+// StoreOAuth2TokenInKeychain stores an OAuth2 token in Mac's keychain
+func StoreOAuth2TokenInKeychain(accountName, service string, token *OAuth2Token) error {
+	// Convert token to JSON
+	tokenJSON, err := json.Marshal(token)
+	if err != nil {
+		return fmt.Errorf("failed to marshal OAuth2 token: %w", err)
+	}
+	
+	// Create service name for keychain storage
+	serviceName := fmt.Sprintf("imap-backup-oauth2-%s", service)
+	
+	// Store in keychain
+	cmd := exec.Command("security", "add-generic-password",
+		"-s", serviceName,
+		"-a", accountName,
+		"-w", string(tokenJSON),
+		"-U", // Update if exists
+		"-T", "", // Allow access by all applications
+		"-j", "OAuth2 token for imap-backup", // Comment
+	)
+	
+	if err := cmd.Run(); err != nil {
+		// If update fails, try to add new entry
+		cmd = exec.Command("security", "add-generic-password",
+			"-s", serviceName,
+			"-a", accountName,
+			"-w", string(tokenJSON),
+			"-T", "", // Allow access by all applications
+			"-j", "OAuth2 token for imap-backup", // Comment
+		)
+		
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to store OAuth2 token in keychain: %w", err)
+		}
+	}
+	
+	return nil
+}
+
+// DeleteOAuth2TokenFromKeychain removes an OAuth2 token from Mac's keychain
+func DeleteOAuth2TokenFromKeychain(accountName, service string) error {
+	serviceName := fmt.Sprintf("imap-backup-oauth2-%s", service)
+	
+	cmd := exec.Command("security", "delete-generic-password",
+		"-s", serviceName,
+		"-a", accountName,
+	)
+	
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete OAuth2 token from keychain: %w", err)
+	}
+	
+	return nil
+}
+
+// ListOAuth2TokensInKeychain lists all OAuth2 tokens stored in keychain
+func ListOAuth2TokensInKeychain() ([]string, error) {
+	cmd := exec.Command("security", "dump-keychain", "-d")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list keychain items: %w", err)
+	}
+	
+	var tokens []string
+	lines := strings.Split(string(output), "\n")
+	
+	for _, line := range lines {
+		if strings.Contains(line, "imap-backup-oauth2") {
+			// Extract account name from keychain dump
+			if strings.Contains(line, "acct") {
+				parts := strings.Split(line, "\"")
+				for i, part := range parts {
+					if strings.Contains(part, "acct") && i+1 < len(parts) {
+						tokens = append(tokens, parts[i+1])
+						break
+					}
+				}
+			}
+		}
+	}
+	
+	return tokens, nil
 }
 
 // DetectAuthType detects the authentication type needed for an email provider
