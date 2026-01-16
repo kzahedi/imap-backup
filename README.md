@@ -19,23 +19,6 @@ A native macOS menubar app for backing up emails from IMAP servers. Supports Gma
 - **Complete .eml files** - Full RFC 5322 emails with embedded attachments
 - **International character support** - Proper RFC 2047 MIME decoding for subjects
 
-## Screenshots
-
-### Main Window
-The main window shows account details, backup statistics, and progress.
-
-![Main Window](screenshots/main-window.png)
-
-### Menubar
-Quick access to backup status, scheduling, and controls from your menubar.
-
-![Menubar](screenshots/menubar.png)
-
-### Settings
-Configure storage location (local or iCloud), backup schedule, and manage accounts.
-
-![Settings](screenshots/settings.png)
-
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
