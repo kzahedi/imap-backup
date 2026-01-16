@@ -275,50 +275,47 @@ actor IMAPService {
 
     private func extractEmailData(from response: String) -> Data {
         // Extract the literal email data from FETCH response
-        // IMAP literal format: {size}\r\n<data>
+        // IMAP FETCH response format: * UID FETCH (BODY[] {size}\r\n<data>\r\n)
 
-        // Find the literal marker: BODY[] {size}
-        guard let literalStart = response.range(of: "BODY[]") ?? response.range(of: "BODY.PEEK[]") else {
+        // Find the literal size marker {size}
+        // Look for pattern like "BODY[] {" or just find the first {digits}
+        guard let braceStart = response.range(of: "{") else {
             return Data()
         }
 
-        // Find the opening brace with size
-        guard let braceStart = response.range(of: "{", range: literalStart.upperBound..<response.endIndex),
-              let braceEnd = response.range(of: "}", range: braceStart.upperBound..<response.endIndex) else {
+        guard let braceEnd = response.range(of: "}", range: braceStart.upperBound..<response.endIndex) else {
             return Data()
         }
 
         // Parse the size
         let sizeString = String(response[braceStart.upperBound..<braceEnd.lowerBound])
-        guard let size = Int(sizeString) else {
+        guard let size = Int(sizeString), size > 0 else {
             return Data()
         }
 
-        // Find the start of actual data (after }\r\n)
-        let afterBrace = braceEnd.upperBound
+        // The data starts after }\r\n
+        // Convert to UTF8 bytes for accurate positioning
+        let responseData = Data(response.utf8)
 
-        // The data starts after the CRLF following the }
-        // We need to find \r\n and skip it
-        var dataStartIndex = afterBrace
-        if dataStartIndex < response.endIndex {
-            let remaining = response[dataStartIndex...]
-            if remaining.hasPrefix("\r\n") {
-                dataStartIndex = response.index(dataStartIndex, offsetBy: 2)
-            } else if remaining.hasPrefix("\n") {
-                dataStartIndex = response.index(dataStartIndex, offsetBy: 1)
-            }
+        // Find the position of } in the data
+        let braceEndUtf8Offset = response[..<braceEnd.upperBound].utf8.count
+
+        // Skip past }\r\n (typically 3 bytes: }, \r, \n)
+        var dataStart = braceEndUtf8Offset
+        if dataStart < responseData.count && responseData[dataStart] == 0x0D { // \r
+            dataStart += 1
+        }
+        if dataStart < responseData.count && responseData[dataStart] == 0x0A { // \n
+            dataStart += 1
         }
 
         // Extract exactly 'size' bytes
-        // Convert to UTF8 data first for accurate byte counting
-        let dataSection = response[dataStartIndex...]
-        let utf8Data = Data(dataSection.utf8)
-
-        if utf8Data.count >= size {
-            return utf8Data.prefix(size)
-        } else {
-            return utf8Data
+        let dataEnd = min(dataStart + size, responseData.count)
+        if dataStart < dataEnd {
+            return responseData[dataStart..<dataEnd]
         }
+
+        return Data()
     }
 }
 
