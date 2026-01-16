@@ -48,7 +48,7 @@ struct EmailAccount: Identifiable, Codable, Hashable {
     static func ionos(email: String, password: String) -> EmailAccount {
         EmailAccount(
             email: email,
-            imapServer: "imap.ionos.com",
+            imapServer: "imap.ionos.de",
             port: 993,
             password: password,
             useSSL: true

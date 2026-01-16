@@ -55,7 +55,7 @@ struct AddAccountView: View {
                         imapServer = "imap.gmail.com"
                         port = "993"
                     case .ionos:
-                        imapServer = "imap.ionos.com"
+                        imapServer = "imap.ionos.de"
                         port = "993"
                     case .custom:
                         imapServer = ""
