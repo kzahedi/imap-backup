@@ -1,73 +1,32 @@
-# Binaries
-imap-backup
-*.exe
-*.dll
-*.so
-*.dylib
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad
+xcuserdata/
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.moved-aside
 
-# Test and backup directories - SENSITIVE DATA
-backup/
-test-backup/
-test-real/
-test-*/
-**/backup/
-**/test-*/
-**/*@*/**
-**/keyan@*/**
-**/personal/**
-**/real-data/**
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
 
-# Go build artifacts
-*.test
-*.prof
-*.out
-
-# Configuration files (may contain sensitive data)
-*.yaml
-*.yml
-*.json
-.imap-backup*
-.env
-.env.local
-.env.*.local
-secrets.txt
-credentials.txt
-passwords.txt
-
-# OS generated files
+# macOS
 .DS_Store
-.DS_Store?
+.AppleDouble
+.LSOverride
 ._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Temporary files and logs (may contain sensitive data)
-*.tmp
-*.temp
+# App specific
 *.log
-*.bak
-*.backup
-*.old
-*.orig
-*.swp
-*.swo
-core.*
-dump.*
+Backups/
 
-# SonarQube analysis files
-.scannerwork/
-coverage.out
-coverage.html
-golangci-lint-report.xml
-govet-report.out
-gosec-report.json
-sonar-report.json
+# Secrets (never commit)
+.env
+credentials.json
