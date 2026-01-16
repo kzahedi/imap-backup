@@ -87,29 +87,3 @@ struct BackupError: Identifiable {
         self.email = email
     }
 }
-
-/// Schedule configuration for automatic backups
-struct BackupSchedule: Codable {
-    var isEnabled: Bool
-    var frequency: ScheduleFrequency
-    var time: Date // Time of day for daily/weekly
-    var lastRun: Date?
-
-    init(
-        isEnabled: Bool = false,
-        frequency: ScheduleFrequency = .daily,
-        time: Date = Calendar.current.date(bySettingHour: 2, minute: 0, second: 0, of: Date()) ?? Date()
-    ) {
-        self.isEnabled = isEnabled
-        self.frequency = frequency
-        self.time = time
-    }
-}
-
-enum ScheduleFrequency: String, Codable, CaseIterable {
-    case hourly = "Hourly"
-    case daily = "Daily"
-    case weekly = "Weekly"
-
-    var description: String { rawValue }
-}

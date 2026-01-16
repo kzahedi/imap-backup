@@ -60,7 +60,98 @@ struct EmailParser {
         value = value.replacingOccurrences(of: "\n\t", with: " ")
         value = value.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Decode RFC 2047 encoded-word strings (e.g., =?utf-8?q?...?=)
+        value = decodeRFC2047(value)
+
         return value.isEmpty ? nil : value
+    }
+
+    /// Decode RFC 2047 encoded-word strings
+    /// Format: =?charset?encoding?encoded_text?=
+    /// encoding: Q = quoted-printable, B = base64
+    private static func decodeRFC2047(_ input: String) -> String {
+        let pattern = #"=\?([^?]+)\?([QqBb])\?([^?]*)\?="#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return input
+        }
+
+        var result = input
+        let matches = regex.matches(in: input, range: NSRange(input.startIndex..., in: input))
+
+        // Process matches in reverse order to preserve string indices
+        for match in matches.reversed() {
+            guard let fullRange = Range(match.range, in: result),
+                  let charsetRange = Range(match.range(at: 1), in: result),
+                  let encodingRange = Range(match.range(at: 2), in: result),
+                  let textRange = Range(match.range(at: 3), in: result) else {
+                continue
+            }
+
+            let charset = String(result[charsetRange]).lowercased()
+            let encoding = String(result[encodingRange]).lowercased()
+            let encodedText = String(result[textRange])
+
+            var decodedData: Data?
+
+            if encoding == "q" {
+                // Quoted-printable decoding
+                decodedData = decodeQuotedPrintable(encodedText, isHeader: true)
+            } else if encoding == "b" {
+                // Base64 decoding
+                decodedData = Data(base64Encoded: encodedText)
+            }
+
+            if let data = decodedData {
+                let cfEncoding = CFStringConvertIANACharSetNameToEncoding(charset as CFString)
+                let nsEncoding = CFStringConvertEncodingToNSStringEncoding(cfEncoding)
+
+                if let decoded = String(data: data, encoding: String.Encoding(rawValue: nsEncoding)) {
+                    result.replaceSubrange(fullRange, with: decoded)
+                } else if let decoded = String(data: data, encoding: .utf8) {
+                    result.replaceSubrange(fullRange, with: decoded)
+                }
+            }
+        }
+
+        // Remove spaces between adjacent encoded words
+        result = result.replacingOccurrences(of: "  ", with: " ")
+
+        return result
+    }
+
+    /// Decode quoted-printable encoding
+    private static func decodeQuotedPrintable(_ input: String, isHeader: Bool = false) -> Data? {
+        var result = Data()
+        var index = input.startIndex
+
+        while index < input.endIndex {
+            let char = input[index]
+
+            if char == "=" && input.index(index, offsetBy: 2, limitedBy: input.endIndex) != nil {
+                let hexStart = input.index(after: index)
+                let hexEnd = input.index(hexStart, offsetBy: 2, limitedBy: input.endIndex) ?? input.endIndex
+                let hex = String(input[hexStart..<hexEnd])
+
+                if let byte = UInt8(hex, radix: 16) {
+                    result.append(byte)
+                    index = hexEnd
+                    continue
+                }
+            } else if isHeader && char == "_" {
+                // In headers, underscore represents space
+                result.append(0x20)
+                index = input.index(after: index)
+                continue
+            }
+
+            if let byte = String(char).data(using: .utf8) {
+                result.append(byte)
+            }
+            index = input.index(after: index)
+        }
+
+        return result
     }
 
     /// Parse sender name and email from From header

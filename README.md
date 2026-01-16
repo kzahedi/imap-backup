@@ -8,10 +8,9 @@ A native macOS app for backing up emails from IMAP servers (Gmail, IONOS, and cu
 - **Incremental backup**: Only downloads new emails
 - **Folder hierarchy preservation**: Mirrors your email folder structure
 - **Human-readable filenames**: `<timestamp>_<sender>.eml`
-- **Attachment extraction**: Saves attachments in organized subfolders
+- **Complete emails**: Full .eml files with embedded attachments
 - **Menubar app**: Quick access to backup status
 - **Real-time progress**: See download progress per account
-- **Scheduled backups**: Automatic hourly/daily/weekly backups
 
 ## Requirements
 
@@ -77,12 +76,7 @@ Emails are saved as standard `.eml` files with human-readable names:
 20240115_143022_John_Smith.eml
 ```
 
-Attachments are saved in a subfolder:
-```
-20240115_143022__John_Smith_attachments/
-├── document.pdf
-└── image.png
-```
+Each .eml file is a complete RFC 5322 email containing all headers, body text, and embedded attachments (as MIME parts).
 
 ## Development
 

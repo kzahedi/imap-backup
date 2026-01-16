@@ -71,11 +71,29 @@ actor IMAPService {
     // MARK: - IMAP Commands
 
     func login() async throws {
-        // Read greeting
+        // Read server greeting
         _ = try await readResponse()
 
-        // Send login command
-        let response = try await sendCommand("LOGIN \"\(account.username)\" \"\(account.password)\"")
+        // Trim whitespace from credentials
+        let username = account.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let password = account.password.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Escape special characters in credentials
+        let escapedUsername = username
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedPassword = password
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+
+        // Send LOGIN command
+        let response = try await sendCommand("LOGIN \"\(escapedUsername)\" \"\(escapedPassword)\"")
+
+        // Check for success (OK) or failure (NO/BAD)
+        if response.contains(" NO ") || response.contains(" BAD ") {
+            throw IMAPError.authenticationFailed
+        }
+
         guard response.contains("OK") else {
             throw IMAPError.authenticationFailed
         }

@@ -272,10 +272,54 @@ struct StatBox: View {
 }
 
 struct StatsSection: View {
+    @EnvironmentObject var backupManager: BackupManager
     let account: EmailAccount
 
+    var stats: BackupManager.AccountStats {
+        backupManager.getStats(for: account)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
+            // Backup Statistics
+            Text("Backup Statistics")
+                .font(.headline)
+
+            HStack(spacing: 16) {
+                StatCard(
+                    icon: "envelope.fill",
+                    title: "Emails",
+                    value: "\(stats.totalEmails)",
+                    color: .blue
+                )
+                StatCard(
+                    icon: "internaldrive.fill",
+                    title: "Size",
+                    value: formatBytes(stats.totalSize),
+                    color: .green
+                )
+                StatCard(
+                    icon: "folder.fill",
+                    title: "Folders",
+                    value: "\(stats.folderCount)",
+                    color: .orange
+                )
+            }
+
+            // Date range
+            if let oldest = stats.oldestEmail, let newest = stats.newestEmail {
+                HStack {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(.secondary)
+                    Text("Emails from \(oldest, style: .date) to \(newest, style: .date)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Divider()
+
+            // Account Info
             Text("Account Info")
                 .font(.headline)
 
@@ -293,8 +337,45 @@ struct StatsSection: View {
                     Text(account.isEnabled ? "Enabled" : "Disabled")
                         .foregroundStyle(account.isEnabled ? .green : .red)
                 }
+                if let lastBackup = account.lastBackupDate {
+                    GridRow {
+                        Text("Last backup:").foregroundStyle(.secondary)
+                        Text(lastBackup, style: .relative) + Text(" ago")
+                    }
+                }
             }
         }
+    }
+
+    func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
+    }
+}
+
+struct StatCard: View {
+    let icon: String
+    let title: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(color)
+            Text(value)
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

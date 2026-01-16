@@ -4,6 +4,10 @@ struct MenubarView: View {
     @EnvironmentObject var backupManager: BackupManager
     @Environment(\.openWindow) private var openWindow
 
+    var globalStats: BackupManager.GlobalStats {
+        backupManager.getGlobalStats()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
@@ -17,6 +21,14 @@ struct MenubarView: View {
                 }
             }
 
+            // Global stats
+            HStack(spacing: 16) {
+                MenubarStatItem(icon: "envelope.fill", value: "\(globalStats.totalEmails)", label: "emails")
+                MenubarStatItem(icon: "internaldrive.fill", value: formatBytes(globalStats.totalSize), label: "total")
+                MenubarStatItem(icon: "person.2.fill", value: "\(globalStats.accountCount)", label: "accounts")
+            }
+            .padding(.vertical, 4)
+
             Divider()
 
             // Account statuses
@@ -27,6 +39,76 @@ struct MenubarView: View {
             } else {
                 ForEach(backupManager.accounts) { account in
                     MenubarAccountRow(account: account)
+                }
+            }
+
+            Divider()
+
+            // Current backup status
+            if backupManager.isBackingUp {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                        Text("Backing up...")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+
+                    // Show overall progress
+                    let totalProgress = calculateTotalProgress()
+                    ProgressView(value: totalProgress)
+                        .progressViewStyle(.linear)
+
+                    Text("\(totalDownloaded()) emails downloaded")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+
+                Divider()
+            }
+
+            // Schedule info
+            HStack {
+                Image(systemName: "clock.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Menu {
+                    ForEach(BackupSchedule.allCases, id: \.self) { scheduleOption in
+                        Button(action: {
+                            backupManager.setSchedule(scheduleOption)
+                        }) {
+                            HStack {
+                                Text(scheduleOption.rawValue)
+                                if backupManager.schedule == scheduleOption {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(backupManager.schedule.rawValue)
+                            .font(.caption)
+                        if backupManager.schedule.needsTimeSelection {
+                            Text("at \(backupManager.scheduledTimeFormatted)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.caption2)
+                    }
+                }
+                .menuStyle(.borderlessButton)
+
+                Spacer()
+
+                if let nextBackup = backupManager.nextScheduledBackup {
+                    Text("Next: \(nextBackup, style: .relative)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -85,6 +167,21 @@ struct MenubarView: View {
         }
         .padding()
         .frame(width: 280)
+    }
+
+    func calculateTotalProgress() -> Double {
+        let activeProgress = backupManager.progress.values.filter { $0.status.isActive }
+        guard !activeProgress.isEmpty else { return 0 }
+
+        let totalDownloaded = activeProgress.reduce(0) { $0 + $1.downloadedEmails }
+        let totalEmails = activeProgress.reduce(0) { $0 + $1.totalEmails }
+
+        guard totalEmails > 0 else { return 0 }
+        return Double(totalDownloaded) / Double(totalEmails)
+    }
+
+    func totalDownloaded() -> Int {
+        backupManager.progress.values.reduce(0) { $0 + $1.downloadedEmails }
     }
 }
 
@@ -151,6 +248,35 @@ struct MenubarAccountRow: View {
 
         return .gray
     }
+}
+
+struct MenubarStatItem: View {
+    let icon: String
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                Text(value)
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+func formatBytes(_ bytes: Int64) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    formatter.allowedUnits = [.useGB, .useMB]
+    return formatter.string(fromByteCount: bytes)
 }
 
 #Preview {

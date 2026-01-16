@@ -27,31 +27,66 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            Section("Storage Location") {
+                // Storage type picker
+                Picker("Store backups in:", selection: Binding(
+                    get: { backupManager.isUsingICloud ? "icloud" : "local" },
+                    set: { newValue in
+                        if newValue == "icloud" {
+                            backupManager.useICloudDrive()
+                        } else {
+                            backupManager.useLocalStorage()
+                        }
+                    }
+                )) {
+                    HStack {
+                        Image(systemName: "icloud.fill")
+                        Text("iCloud Drive")
+                    }
+                    .tag("icloud")
+
+                    HStack {
+                        Image(systemName: "internaldrive.fill")
+                        Text("Local Storage")
+                    }
+                    .tag("local")
+                }
+                .pickerStyle(.radioGroup)
+
+                // Show current path
                 HStack {
-                    Text("Backup Location:")
-                    Spacer()
+                    if backupManager.isUsingICloud {
+                        Image(systemName: "icloud.fill")
+                            .foregroundStyle(.blue)
+                        Text("Syncing to iCloud Drive")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Image(systemName: "folder.fill")
+                            .foregroundStyle(.secondary)
+                    }
+
                     Text(backupManager.backupLocation.path)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Button("Choose...") {
-                        backupManager.selectBackupLocation()
-                    }
                 }
 
                 HStack {
-                    Text("Open backup folder:")
+                    Button("Choose Custom Location...") {
+                        backupManager.selectBackupLocation()
+                    }
+
                     Spacer()
+
                     Button("Open in Finder") {
                         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: backupManager.backupLocation.path)
                     }
                 }
             }
 
-            Section {
+            Section("Startup") {
                 Toggle("Start at login", isOn: .constant(false))
-                Toggle("Show in Dock", isOn: .constant(true))
             }
         }
         .formStyle(.grouped)
@@ -60,33 +95,69 @@ struct GeneralSettingsView: View {
 }
 
 struct ScheduleSettingsView: View {
-    @State private var scheduleEnabled = false
-    @State private var frequency: ScheduleFrequency = .daily
-    @State private var scheduleTime = Date()
+    @EnvironmentObject var backupManager: BackupManager
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Enable automatic backup", isOn: $scheduleEnabled)
-
-                if scheduleEnabled {
-                    Picker("Frequency", selection: $frequency) {
-                        ForEach(ScheduleFrequency.allCases, id: \.self) { freq in
-                            Text(freq.description).tag(freq)
-                        }
+            Section("Automatic Backup") {
+                Picker("Schedule", selection: Binding(
+                    get: { backupManager.schedule },
+                    set: { backupManager.setSchedule($0) }
+                )) {
+                    ForEach(BackupSchedule.allCases, id: \.self) { schedule in
+                        Text(schedule.rawValue).tag(schedule)
                     }
+                }
+                .pickerStyle(.radioGroup)
 
-                    if frequency != .hourly {
-                        DatePicker("Time", selection: $scheduleTime, displayedComponents: .hourAndMinute)
-                    }
+                if backupManager.schedule.needsTimeSelection {
+                    DatePicker(
+                        "Backup time",
+                        selection: Binding(
+                            get: { backupManager.scheduledTime },
+                            set: { backupManager.setScheduledTime($0) }
+                        ),
+                        displayedComponents: .hourAndMinute
+                    )
+                    .datePickerStyle(.graphical)
                 }
             }
 
-            Section {
-                Text("Next scheduled backup:")
-                    .foregroundStyle(.secondary)
-                Text(scheduleEnabled ? "Tomorrow at 2:00 AM" : "Not scheduled")
-                    .font(.headline)
+            Section("Status") {
+                if backupManager.schedule != .manual {
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .foregroundStyle(.blue)
+                        VStack(alignment: .leading) {
+                            Text("Next scheduled backup")
+                                .foregroundStyle(.secondary)
+                            if let nextBackup = backupManager.nextScheduledBackup {
+                                Text(nextBackup, style: .relative)
+                                    .font(.headline)
+                            }
+                        }
+                    }
+                } else {
+                    HStack {
+                        Image(systemName: "clock")
+                            .foregroundStyle(.secondary)
+                        Text("Automatic backup is disabled")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let lastAccount = backupManager.accounts.first(where: { $0.lastBackupDate != nil }),
+                   let lastBackup = lastAccount.lastBackupDate {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading) {
+                            Text("Last backup")
+                                .foregroundStyle(.secondary)
+                            Text(lastBackup, style: .relative) + Text(" ago")
+                        }
+                    }
+                }
             }
         }
         .formStyle(.grouped)
