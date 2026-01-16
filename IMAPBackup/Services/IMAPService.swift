@@ -127,7 +127,7 @@ actor IMAPService {
         return extractEmailData(from: response)
     }
 
-    func searchUnseen() async throws -> [UInt32] {
+    func searchAll() async throws -> [UInt32] {
         let response = try await sendCommand("UID SEARCH ALL")
         return parseSearchResponse(response)
     }

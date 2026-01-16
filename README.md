@@ -9,6 +9,8 @@ A native macOS menubar app for backing up emails from IMAP servers. Supports Gma
 ## Features
 
 - **Multi-account support** - Gmail, IONOS, and custom IMAP servers
+- **Full mailbox sync** - Downloads all emails, not just unread
+- **Incremental backups** - Only downloads new emails on subsequent runs
 - **Scheduled backups** - Manual, hourly, daily, or weekly with custom time selection
 - **iCloud Drive sync** - Automatically sync backups across your Mac devices
 - **Menubar app** - Quick access to backup status and controls
@@ -161,11 +163,6 @@ IMAPBackup/
 - Check your firewall allows outbound connections on port 993
 - Verify the IMAP server address is correct
 - Ensure SSL is enabled for port 993
-
-### Missing Emails
-
-- The app currently downloads emails marked as "unseen"
-- Future versions will support full mailbox sync
 
 ## Contributing
 

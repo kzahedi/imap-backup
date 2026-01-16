@@ -1,4 +1,45 @@
 import SwiftUI
+import AppKit
+
+// NSSecureTextField wrapper for proper password manager support
+struct PasswordField: NSViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSecureTextField {
+        let textField = NSSecureTextField()
+        textField.placeholderString = placeholder
+        textField.delegate = context.coordinator
+        textField.contentType = .password
+        textField.bezelStyle = .roundedBezel
+        textField.focusRingType = .exterior
+        return textField
+    }
+
+    func updateNSView(_ nsView: NSSecureTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: PasswordField
+
+        init(_ parent: PasswordField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            if let textField = obj.object as? NSTextField {
+                parent.text = textField.stringValue
+            }
+        }
+    }
+}
 
 struct AddAccountView: View {
     @EnvironmentObject var backupManager: BackupManager
@@ -71,8 +112,13 @@ struct AddAccountView: View {
                     .textContentType(.emailAddress)
 
                 // Password
-                SecureField(accountType == .gmail ? "App Password" : "Password", text: $password)
-                    .textContentType(.password)
+                LabeledContent(accountType == .gmail ? "App Password" : "Password") {
+                    PasswordField(
+                        placeholder: accountType == .gmail ? "App Password" : "Password",
+                        text: $password
+                    )
+                    .frame(height: 22)
+                }
 
                 // Server settings for custom
                 if accountType == .custom {
