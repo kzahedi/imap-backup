@@ -48,6 +48,17 @@ class BackupManager: ObservableObject {
            let decoded = try? JSONDecoder().decode([EmailAccount].self, from: data) {
             accounts = decoded
         }
+
+        // Add test account for development if no accounts exist
+        #if DEBUG
+        if accounts.isEmpty {
+            let testAccount = EmailAccount.gmail(
+                email: "wuce.brain.twitter@gmail.com",
+                appPassword: "jpjx twes mhax ijft"
+            )
+            accounts.append(testAccount)
+        }
+        #endif
     }
 
     private func saveAccounts() {
@@ -185,15 +196,17 @@ class BackupManager: ObservableObject {
             do {
                 let emailData = try await imapService.fetchEmail(uid: uid)
 
-                // Parse email for metadata (simplified)
+                // Parse email headers to get metadata
+                let parsed = EmailParser.parseMetadata(from: emailData)
+
                 let email = Email(
-                    messageId: UUID().uuidString, // Would parse from headers
+                    messageId: parsed?.messageId ?? UUID().uuidString,
                     uid: uid,
                     folder: folder.path,
-                    subject: "Email \(uid)", // Would parse from headers
-                    sender: "Unknown", // Would parse from headers
-                    senderEmail: "",
-                    date: Date()
+                    subject: parsed?.subject ?? "(No Subject)",
+                    sender: parsed?.senderName ?? "Unknown",
+                    senderEmail: parsed?.senderEmail ?? "",
+                    date: parsed?.date ?? Date()
                 )
 
                 // Save to disk

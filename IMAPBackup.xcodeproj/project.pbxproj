@@ -20,6 +20,7 @@
 		B1000001000000000000000B /* MenubarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000000B /* MenubarView.swift */; };
 		B1000001000000000000000C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000000C /* SettingsView.swift */; };
 		B1000001000000000000000D /* AddAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000000D /* AddAccountView.swift */; };
+		B1000001000000000000000E /* EmailParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000010 /* EmailParser.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,7 @@
 		B1000002000000000000000D /* AddAccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountView.swift; sourceTree = "<group>"; };
 		B1000002000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B1000002000000000000000F /* IMAPBackup.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IMAPBackup.entitlements; sourceTree = "<group>"; };
+		B10000020000000000000010 /* EmailParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailParser.swift; sourceTree = "<group>"; };
 		B10000030000000000000001 /* IMAPBackup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IMAPBackup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -105,6 +107,7 @@
 				B10000020000000000000006 /* IMAPService.swift */,
 				B10000020000000000000007 /* StorageService.swift */,
 				B10000020000000000000008 /* BackupManager.swift */,
+				B10000020000000000000010 /* EmailParser.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -216,6 +219,7 @@
 				B1000001000000000000000B /* MenubarView.swift in Sources */,
 				B1000001000000000000000C /* SettingsView.swift in Sources */,
 				B1000001000000000000000D /* AddAccountView.swift in Sources */,
+				B1000001000000000000000E /* EmailParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

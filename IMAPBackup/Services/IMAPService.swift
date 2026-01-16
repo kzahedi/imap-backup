@@ -26,17 +26,29 @@ actor IMAPService {
 
         connection = NWConnection(host: host, port: port, using: params)
 
+        // Use a class to track if continuation has been resumed (reference type for closure capture)
+        class ContinuationState {
+            var hasResumed = false
+        }
+        let state = ContinuationState()
+
         return try await withCheckedThrowingContinuation { continuation in
-            connection?.stateUpdateHandler = { [weak self] state in
-                switch state {
+            connection?.stateUpdateHandler = { [weak self] connectionState in
+                // Only resume once
+                guard !state.hasResumed else { return }
+
+                switch connectionState {
                 case .ready:
+                    state.hasResumed = true
                     Task {
                         await self?.setConnected(true)
                         continuation.resume()
                     }
                 case .failed(let error):
+                    state.hasResumed = true
                     continuation.resume(throwing: IMAPError.connectionFailed(error.localizedDescription))
                 case .cancelled:
+                    state.hasResumed = true
                     continuation.resume(throwing: IMAPError.connectionCancelled)
                 default:
                     break
@@ -263,18 +275,50 @@ actor IMAPService {
 
     private func extractEmailData(from response: String) -> Data {
         // Extract the literal email data from FETCH response
-        // This is simplified - production code needs proper literal handling
-        if let startRange = response.range(of: "BODY[] {"),
-           let endBrace = response.range(of: "}", range: startRange.upperBound..<response.endIndex),
-           let sizeStr = response[startRange.upperBound..<endBrace.lowerBound].components(separatedBy: CharacterSet.decimalDigits.inverted).joined() as String?,
-           let size = Int(sizeStr) {
+        // IMAP literal format: {size}\r\n<data>
 
-            let dataStart = response.index(endBrace.upperBound, offsetBy: 2) // Skip \r\n
-            let dataEnd = response.index(dataStart, offsetBy: size, limitedBy: response.endIndex) ?? response.endIndex
-            return Data(response[dataStart..<dataEnd].utf8)
+        // Find the literal marker: BODY[] {size}
+        guard let literalStart = response.range(of: "BODY[]") ?? response.range(of: "BODY.PEEK[]") else {
+            return Data()
         }
 
-        return Data()
+        // Find the opening brace with size
+        guard let braceStart = response.range(of: "{", range: literalStart.upperBound..<response.endIndex),
+              let braceEnd = response.range(of: "}", range: braceStart.upperBound..<response.endIndex) else {
+            return Data()
+        }
+
+        // Parse the size
+        let sizeString = String(response[braceStart.upperBound..<braceEnd.lowerBound])
+        guard let size = Int(sizeString) else {
+            return Data()
+        }
+
+        // Find the start of actual data (after }\r\n)
+        let afterBrace = braceEnd.upperBound
+
+        // The data starts after the CRLF following the }
+        // We need to find \r\n and skip it
+        var dataStartIndex = afterBrace
+        if dataStartIndex < response.endIndex {
+            let remaining = response[dataStartIndex...]
+            if remaining.hasPrefix("\r\n") {
+                dataStartIndex = response.index(dataStartIndex, offsetBy: 2)
+            } else if remaining.hasPrefix("\n") {
+                dataStartIndex = response.index(dataStartIndex, offsetBy: 1)
+            }
+        }
+
+        // Extract exactly 'size' bytes
+        // Convert to UTF8 data first for accurate byte counting
+        let dataSection = response[dataStartIndex...]
+        let utf8Data = Data(dataSection.utf8)
+
+        if utf8Data.count >= size {
+            return utf8Data.prefix(size)
+        } else {
+            return utf8Data
+        }
     }
 }
 

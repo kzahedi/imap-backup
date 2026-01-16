@@ -7,7 +7,7 @@ struct AddAccountView: View {
     @State private var accountType: AccountType = .gmail
     @State private var email = ""
     @State private var password = ""
-    @State private var imapServer = ""
+    @State private var imapServer = "imap.gmail.com"  // Default for Gmail
     @State private var port = "993"
     @State private var useSSL = true
 
