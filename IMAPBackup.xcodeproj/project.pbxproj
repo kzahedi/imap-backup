@@ -22,6 +22,7 @@
 		B1000001000000000000000D /* AddAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000000D /* AddAccountView.swift */; };
 		B1000001000000000000000E /* EmailParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000010 /* EmailParser.swift */; };
 		B10000010000000000000011 /* DatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000011 /* DatabaseService.swift */; };
+		B10000010000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000012 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +43,7 @@
 		B1000002000000000000000F /* IMAPBackup.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IMAPBackup.entitlements; sourceTree = "<group>"; };
 		B10000020000000000000010 /* EmailParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailParser.swift; sourceTree = "<group>"; };
 		B10000020000000000000011 /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
+		B10000020000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B10000030000000000000001 /* IMAPBackup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IMAPBackup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -54,6 +56,17 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B10000040000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000010000000000000012 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXGroup section */
 		B10000050000000000000001 = {
@@ -130,6 +143,7 @@
 			children = (
 				B1000002000000000000000E /* Info.plist */,
 				B1000002000000000000000F /* IMAPBackup.entitlements */,
+				B10000020000000000000012 /* Assets.xcassets */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -161,6 +175,7 @@
 			buildPhases = (
 				B10000070000000000000001 /* Sources */,
 				B10000040000000000000001 /* Frameworks */,
+				B10000040000000000000002 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -349,6 +364,7 @@
 		B100000C0000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = IMAPBackup/Resources/IMAPBackup.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -374,6 +390,7 @@
 		B100000C0000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = IMAPBackup/Resources/IMAPBackup.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
