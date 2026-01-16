@@ -72,6 +72,7 @@ struct AddAccountView: View {
 
                 // Password
                 SecureField(accountType == .gmail ? "App Password" : "Password", text: $password)
+                    .textContentType(.password)
 
                 // Server settings for custom
                 if accountType == .custom {
