@@ -88,16 +88,16 @@ class BackupManager: ObservableObject {
             accounts = decoded
         }
 
-        // Add test account for development if no accounts exist
-        #if DEBUG
-        if accounts.isEmpty {
-            let testAccount = EmailAccount.gmail(
-                email: "wuce.brain.twitter@gmail.com",
-                appPassword: "jpjx twes mhax ijft"
-            )
-            accounts.append(testAccount)
-        }
-        #endif
+        // Uncomment to add a test account for development
+        // #if DEBUG
+        // if accounts.isEmpty {
+        //     let testAccount = EmailAccount.gmail(
+        //         email: "your-email@gmail.com",
+        //         appPassword: "your-app-password"
+        //     )
+        //     accounts.append(testAccount)
+        // }
+        // #endif
     }
 
     private func saveAccounts() {
