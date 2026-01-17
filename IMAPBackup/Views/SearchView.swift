@@ -6,9 +6,7 @@ struct SearchView: View {
     @State private var searchText = ""
     @State private var searchResults: [SearchResult] = []
     @State private var isSearching = false
-    @State private var isIndexing = false
-    @State private var indexProgress: (current: Int, total: Int) = (0, 0)
-    @State private var indexStats: (emailCount: Int, attachmentCount: Int) = (0, 0)
+    @State private var emailCount: Int = 0
     @State private var errorMessage: String?
     @State private var searchService: SearchService?
 
@@ -22,9 +20,7 @@ struct SearchView: View {
             Divider()
 
             // Content area
-            if isIndexing {
-                indexingView
-            } else if isSearching {
+            if isSearching {
                 ProgressView("Searching...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if searchResults.isEmpty {
@@ -51,7 +47,7 @@ struct SearchView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField("Search emails, subjects, attachments...", text: $searchText)
+            TextField("Search emails by sender, subject, or content...", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.title3)
                 .onSubmit {
@@ -86,9 +82,16 @@ struct SearchView: View {
                     .foregroundStyle(.secondary)
                 Text("Search Your Emails")
                     .font(.title2)
-                Text("Search by sender, subject, email content, or attachment names and content.")
+                Text("Search by sender, subject, or email content.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+
+                if emailCount == 0 {
+                    Text("No emails backed up yet. Run a backup first.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 8)
+                }
             } else {
                 Image(systemName: "doc.text.magnifyingglass")
                     .font(.system(size: 48))
@@ -98,32 +101,9 @@ struct SearchView: View {
                 Text("No emails found matching \"\(searchText)\"")
                     .foregroundStyle(.secondary)
             }
-
-            if indexStats.emailCount == 0 {
-                Button("Build Search Index") {
-                    Task { await rebuildIndex() }
-                }
-                .buttonStyle(.bordered)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
-    }
-
-    // MARK: - Indexing View
-
-    var indexingView: some View {
-        VStack(spacing: 16) {
-            ProgressView(value: Double(indexProgress.current), total: Double(max(1, indexProgress.total))) {
-                Text("Indexing emails...")
-            }
-            .progressViewStyle(.linear)
-
-            Text("\(indexProgress.current) of \(indexProgress.total) emails indexed")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(40)
     }
 
     // MARK: - Results List
@@ -165,18 +145,17 @@ struct SearchView: View {
 
             Spacer()
 
-            Text("\(indexStats.emailCount) emails, \(indexStats.attachmentCount) attachments indexed")
+            Text("\(emailCount) emails available")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             Button(action: {
-                Task { await rebuildIndex() }
+                Task { await refreshStats() }
             }) {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
-            .disabled(isIndexing)
-            .help("Rebuild search index")
+            .help("Refresh email count")
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -189,14 +168,22 @@ struct SearchView: View {
         searchService = SearchService(backupLocation: backupManager.backupLocation)
         do {
             try await searchService?.open()
-            let stats = try await searchService?.getStats() ?? (0, 0)
-            await MainActor.run {
-                indexStats = stats
-            }
+            await refreshStats()
         } catch {
             await MainActor.run {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func refreshStats() async {
+        do {
+            let stats = try await searchService?.getStats() ?? (0, 0)
+            await MainActor.run {
+                emailCount = stats.0
+            }
+        } catch {
+            // Ignore stats errors
         }
     }
 
@@ -218,34 +205,6 @@ struct SearchView: View {
             await MainActor.run {
                 errorMessage = error.localizedDescription
                 isSearching = false
-            }
-        }
-    }
-
-    private func rebuildIndex() async {
-        guard let service = searchService else { return }
-
-        await MainActor.run {
-            isIndexing = true
-            indexProgress = (0, 0)
-        }
-
-        do {
-            try await service.reindexAll { current, total in
-                Task { @MainActor in
-                    indexProgress = (current, total)
-                }
-            }
-
-            let stats = try await service.getStats()
-            await MainActor.run {
-                indexStats = stats
-                isIndexing = false
-            }
-        } catch {
-            await MainActor.run {
-                errorMessage = error.localizedDescription
-                isIndexing = false
             }
         }
     }
@@ -356,7 +315,7 @@ struct HighlightedText: View {
                 // Check for closing tag
                 let subparts = part.components(separatedBy: "</mark>")
                 if subparts.count > 1 {
-                    // Highlighted part - use bold and different color since background doesn't work with Text+
+                    // Highlighted part - use bold and different color
                     result = result + Text(subparts[0])
                         .foregroundColor(.orange)
                         .fontWeight(.bold)
