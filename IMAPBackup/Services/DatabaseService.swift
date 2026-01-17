@@ -16,6 +16,16 @@ actor DatabaseService {
         if sqlite3_open(dbPath, &db) != SQLITE_OK {
             throw DatabaseError.failedToOpen(String(cString: sqlite3_errmsg(db)))
         }
+
+        // Enable WAL mode for better concurrent access
+        try execute("PRAGMA journal_mode=WAL")
+
+        // Set busy timeout to 30 seconds - wait if database is locked instead of failing
+        try execute("PRAGMA busy_timeout=30000")
+
+        // NORMAL synchronous is safe with WAL and faster
+        try execute("PRAGMA synchronous=NORMAL")
+
         try createTables()
     }
 
