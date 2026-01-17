@@ -74,6 +74,38 @@ actor StorageService {
 
     // MARK: - Query Methods
 
+    /// Get UIDs of already downloaded emails by scanning filenames
+    /// Filename format: <UID>_<timestamp>_<sender>.eml
+    func getExistingUIDs(accountEmail: String, folderPath: String) throws -> Set<UInt32> {
+        let sanitizedEmail = accountEmail.sanitizedForFilename()
+        let sanitizedPath = folderPath
+            .components(separatedBy: "/")
+            .map { $0.sanitizedForFilename() }
+            .joined(separator: "/")
+
+        let folderURL = baseURL
+            .appendingPathComponent(sanitizedEmail)
+            .appendingPathComponent(sanitizedPath)
+
+        guard fileManager.fileExists(atPath: folderURL.path) else {
+            return []
+        }
+
+        let contents = try fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+        var uids = Set<UInt32>()
+
+        for fileURL in contents where fileURL.pathExtension == "eml" {
+            let filename = fileURL.deletingPathExtension().lastPathComponent
+            // Extract UID from start of filename (before first underscore)
+            if let firstUnderscore = filename.firstIndex(of: "_"),
+               let uid = UInt32(filename[..<firstUnderscore]) {
+                uids.insert(uid)
+            }
+        }
+
+        return uids
+    }
+
     func emailExists(messageId: String, accountEmail: String, folderPath: String) throws -> Bool {
         // This is a simple check - in production, use the database
         let folderURL = try createFolderDirectory(accountEmail: accountEmail, folderPath: folderPath)

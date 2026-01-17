@@ -38,7 +38,6 @@ class BackupManager: ObservableObject {
 
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
     private var scheduleTimer: Timer?
-    private var databaseService: DatabaseService?
     private let accountsKey = "EmailAccounts"
     private let scheduleKey = "BackupSchedule"
     private let scheduleTimeKey = "BackupScheduleTime"
@@ -260,17 +259,8 @@ class BackupManager: ObservableObject {
     private func performBackup(for account: EmailAccount) async {
         let imapService = IMAPService(account: account)
         let storageService = StorageService(baseURL: backupLocation)
-        let databaseService = DatabaseService(backupLocation: backupLocation)
 
         do {
-            // Open database for tracking
-            try await databaseService.open()
-            defer {
-                Task {
-                    await databaseService.close()
-                }
-            }
-
             // Connect
             updateProgress(for: account.id) { $0.status = .connecting }
             try await imapService.connect()
@@ -298,8 +288,7 @@ class BackupManager: ObservableObject {
                     folder: folder,
                     account: account,
                     imapService: imapService,
-                    storageService: storageService,
-                    databaseService: databaseService
+                    storageService: storageService
                 )
             }
 
@@ -331,8 +320,7 @@ class BackupManager: ObservableObject {
         folder: IMAPFolder,
         account: EmailAccount,
         imapService: IMAPService,
-        storageService: StorageService,
-        databaseService: DatabaseService
+        storageService: StorageService
     ) async throws {
         // Select folder
         let status = try await imapService.selectFolder(folder.name)
@@ -343,10 +331,10 @@ class BackupManager: ObservableObject {
         updateProgress(for: account.id) { $0.status = .scanning }
         let allUIDs = try await imapService.searchAll()
 
-        // Load already backed up UIDs from database for incremental sync
-        let backedUpUIDs = (try? await databaseService.getBackedUpUIDs(
-            accountId: account.email,
-            mailbox: folder.path
+        // Get already backed up UIDs by scanning existing files (no database needed)
+        let backedUpUIDs = (try? await storageService.getExistingUIDs(
+            accountEmail: account.email,
+            folderPath: folder.path
         )) ?? []
 
         // Filter to only new emails
@@ -381,24 +369,12 @@ class BackupManager: ObservableObject {
                     date: parsed?.date ?? Date()
                 )
 
-                // Save to disk
-                let filePath = try await storageService.saveEmail(
+                // Save to disk (file existence = backup record, no database needed)
+                _ = try await storageService.saveEmail(
                     emailData,
                     email: email,
                     accountEmail: account.email,
                     folderPath: folder.path
-                )
-
-                // Record in database for incremental sync
-                try? await databaseService.recordEmail(
-                    accountId: account.email,
-                    messageId: messageId,
-                    uid: uid,
-                    mailbox: folder.path,
-                    sender: email.sender,
-                    subject: email.subject,
-                    date: email.date,
-                    filePath: filePath.path
                 )
 
                 updateProgress(for: account.id) {
@@ -416,15 +392,6 @@ class BackupManager: ObservableObject {
                     ))
                 }
             }
-        }
-
-        // Update sync state with highest UID
-        if let maxUID = newUIDs.max() {
-            try? await databaseService.updateSyncState(
-                accountId: account.email,
-                mailbox: folder.path,
-                lastUID: maxUID
-            )
         }
     }
 

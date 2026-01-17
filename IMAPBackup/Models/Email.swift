@@ -40,12 +40,13 @@ struct Email: Identifiable, Hashable {
     }
 
     /// Generate filename for this email
+    /// Format: <UID>_<timestamp>_<sender>.eml
     func filename() -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
         let timestamp = dateFormatter.string(from: date)
         let sanitizedSender = sender.sanitizedForFilename()
-        return "\(timestamp)_\(sanitizedSender).eml"
+        return "\(uid)_\(timestamp)_\(sanitizedSender).eml"
     }
 
     /// Generate attachment folder name for this email
