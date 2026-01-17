@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainWindowView: View {
     @EnvironmentObject var backupManager: BackupManager
+    @Environment(\.openWindow) private var openWindow
     @State private var selectedAccount: EmailAccount?
     @State private var showingAddAccount = false
 
@@ -47,6 +48,12 @@ struct MainWindowView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: {
+                    openWindow(id: "search")
+                }) {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+
                 Button(action: {
                     backupManager.startBackupAll()
                 }) {

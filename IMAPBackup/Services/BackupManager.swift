@@ -261,11 +261,18 @@ class BackupManager: ObservableObject {
         let imapService = IMAPService(account: account)
         let storageService = StorageService(baseURL: backupLocation)
         let databaseService = DatabaseService(backupLocation: backupLocation)
+        let searchService = SearchService(backupLocation: backupLocation)
 
         do {
-            // Open database for tracking
+            // Open databases for tracking and search indexing
             try await databaseService.open()
-            defer { Task { await databaseService.close() } }
+            try await searchService.open()
+            defer {
+                Task {
+                    await databaseService.close()
+                    await searchService.close()
+                }
+            }
 
             // Connect
             updateProgress(for: account.id) { $0.status = .connecting }
@@ -295,7 +302,8 @@ class BackupManager: ObservableObject {
                     account: account,
                     imapService: imapService,
                     storageService: storageService,
-                    databaseService: databaseService
+                    databaseService: databaseService,
+                    searchService: searchService
                 )
             }
 
@@ -328,7 +336,8 @@ class BackupManager: ObservableObject {
         account: EmailAccount,
         imapService: IMAPService,
         storageService: StorageService,
-        databaseService: DatabaseService
+        databaseService: DatabaseService,
+        searchService: SearchService
     ) async throws {
         // Select folder
         let status = try await imapService.selectFolder(folder.name)
@@ -395,6 +404,19 @@ class BackupManager: ObservableObject {
                     subject: email.subject,
                     date: email.date,
                     filePath: filePath.path
+                )
+
+                // Index for search
+                try? await searchService.indexEmail(
+                    accountId: account.email,
+                    mailbox: folder.path,
+                    messageId: messageId,
+                    sender: email.sender,
+                    senderEmail: email.senderEmail,
+                    subject: email.subject,
+                    date: email.date,
+                    filePath: filePath.path,
+                    emlData: emailData
                 )
 
                 updateProgress(for: account.id) {

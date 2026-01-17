@@ -1,19 +1,5 @@
 # IMAP Backup - TODO
 
-## In Progress
-
-- [ ] **Email Search Feature** - Full-text search across all downloaded emails
-  - [ ] Search by sender/author name and email
-  - [ ] Search by subject
-  - [ ] Search email body text (plain text and HTML)
-  - [ ] Search attachment filenames
-  - [ ] Extract and search PDF text content (using PDFKit)
-  - [ ] Extract and search plain text attachments (.txt, .md, .csv, .log)
-  - [ ] SQLite FTS5 full-text search index for speed
-  - [ ] Search results view with highlighted snippets
-  - [ ] Open email file directly from search results
-  - [ ] Keyboard shortcut (Cmd+F) and menubar integration
-
 ## Core Features
 
 - [ ] **Resume Interrupted Downloads** - Track incomplete downloads and resume from last position
@@ -81,3 +67,15 @@
 - [x] RFC 2047 MIME header decoding
 - [x] Complete .eml files with embedded attachments
 - [x] App icon (blue envelope with green download arrow)
+- [x] **Email Search Feature** - Full-text search across all downloaded emails
+  - [x] Search by sender/author name and email
+  - [x] Search by subject
+  - [x] Search email body text (plain text and HTML)
+  - [x] Search attachment filenames
+  - [x] Extract and search PDF text content (using PDFKit)
+  - [x] Extract and search plain text attachments (.txt, .md, .csv, .log)
+  - [x] SQLite FTS5 full-text search index for speed
+  - [x] Search results view with highlighted snippets
+  - [x] Open email file directly from search results
+  - [x] Keyboard shortcut (Cmd+F) and menubar integration
+  - [x] Automatic indexing during backup

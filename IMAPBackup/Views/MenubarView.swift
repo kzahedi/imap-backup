@@ -151,6 +151,15 @@ struct MenubarView: View {
             }
             .buttonStyle(.plain)
 
+            Button(action: {
+                NSApp.sendAction(#selector(AppDelegate.openSearchWindow), to: nil, from: nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }) {
+                Label("Search Emails...", systemImage: "magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("f", modifiers: .command)
+
             SettingsLink {
                 Label("Settings...", systemImage: "gear")
             }

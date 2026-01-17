@@ -13,6 +13,22 @@ struct IMAPBackupApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 800, height: 600)
+        .commands {
+            CommandGroup(after: .textEditing) {
+                Button("Search Emails...") {
+                    NSApp.sendAction(#selector(AppDelegate.openSearchWindow), to: nil, from: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+            }
+        }
+
+        // Search window
+        Window("Search Emails", id: "search") {
+            SearchView()
+                .environmentObject(backupManager)
+        }
+        .defaultSize(width: 700, height: 500)
+        .keyboardShortcut("f", modifiers: [.command, .shift])
 
         // Menubar
         MenuBarExtra {
