@@ -780,28 +780,31 @@ actor SearchService {
             let char = input[index]
 
             if char == "=" {
-                // Check for soft line break
-                let next1 = input.index(index, offsetBy: 1, limitedBy: input.endIndex)
-                if let next1 = next1 {
-                    let nextChar = input[next1]
+                let nextIndex = input.index(after: index)
+
+                // Check we have at least one more character
+                if nextIndex < input.endIndex {
+                    let nextChar = input[nextIndex]
+
+                    // Check for soft line break
                     if nextChar == "\r" || nextChar == "\n" {
                         // Soft line break, skip
-                        index = input.index(after: next1)
+                        index = input.index(after: nextIndex)
                         if index < input.endIndex && input[index] == "\n" {
                             index = input.index(after: index)
                         }
                         continue
                     }
-                }
 
-                // Try to decode hex
-                if let next2 = input.index(index, offsetBy: 2, limitedBy: input.endIndex) {
-                    let hexStart = input.index(after: index)
-                    let hex = String(input[hexStart...next2])
-                    if hex.count >= 2, let byte = UInt8(String(hex.prefix(2)), radix: 16) {
-                        result.append(Character(UnicodeScalar(byte)))
-                        index = input.index(index, offsetBy: 3, limitedBy: input.endIndex) ?? input.endIndex
-                        continue
+                    // Try to decode hex - need 2 characters after =
+                    let secondIndex = input.index(after: nextIndex)
+                    if secondIndex < input.endIndex {
+                        let hex = String(input[nextIndex]) + String(input[secondIndex])
+                        if let byte = UInt8(hex, radix: 16) {
+                            result.append(Character(UnicodeScalar(byte)))
+                            index = input.index(after: secondIndex)
+                            continue
+                        }
                     }
                 }
             }
