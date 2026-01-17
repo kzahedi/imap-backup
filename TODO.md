@@ -28,7 +28,7 @@
 
 ## Performance
 
-- [ ] **Parallel Downloads** - Download multiple emails concurrently
+- [x] **Parallel Downloads** - Download multiple emails concurrently (v0.2.0)
 - [ ] **Rate Limiting** - Respect server limits with configurable throttling
 - [ ] **Large Attachment Streaming** - Stream large attachments to disk instead of memory
 
@@ -56,14 +56,15 @@
 
 - [x] Multi-account support (Gmail, IONOS, custom IMAP)
 - [x] Full mailbox sync (downloads all emails)
-- [x] Incremental backups (SQLite database tracking)
+- [x] Incremental backups (file-based UID tracking, no database)
+- [x] Parallel downloads (no database locking issues)
 - [x] Scheduled backups (manual, hourly, daily, weekly with time selection)
 - [x] iCloud Drive storage option
 - [x] Menubar app with quick controls
 - [x] Real-time progress display
 - [x] Statistics dashboard
 - [x] Folder hierarchy preservation
-- [x] Human-readable filenames
+- [x] Human-readable filenames: `<UID>_<timestamp>_<sender>.eml`
 - [x] RFC 2047 MIME header decoding
 - [x] Complete .eml files with embedded attachments
 - [x] App icon (blue envelope with green download arrow)
@@ -72,10 +73,7 @@
   - [x] Search by subject
   - [x] Search email body text (plain text and HTML)
   - [x] Search attachment filenames
-  - [x] Extract and search PDF text content (using PDFKit)
-  - [x] Extract and search plain text attachments (.txt, .md, .csv, .log)
-  - [x] SQLite FTS5 full-text search index for speed
+  - [x] File-based search (reads .eml files directly, no database)
   - [x] Search results view with highlighted snippets
   - [x] Open email file directly from search results
   - [x] Keyboard shortcut (Cmd+F) and menubar integration
-  - [x] Automatic indexing during backup
