@@ -24,6 +24,8 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var backupManager: BackupManager
+    @StateObject private var launchService = LaunchAtLoginService.shared
+    @AppStorage("hideDockIcon") private var hideDockIcon = false
 
     var body: some View {
         Form {
@@ -86,11 +88,30 @@ struct GeneralSettingsView: View {
             }
 
             Section("Startup") {
-                Toggle("Start at login", isOn: .constant(false))
+                Toggle("Start at login", isOn: $launchService.isEnabled)
+                    .help("Automatically launch IMAP Backup when you log in")
+
+                Toggle("Hide dock icon", isOn: $hideDockIcon)
+                    .help("Run as menubar-only app (requires restart)")
+                    .onChange(of: hideDockIcon) { _, newValue in
+                        setDockIconVisibility(hidden: newValue)
+                    }
             }
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear {
+            // Apply saved dock icon preference on app start
+            setDockIconVisibility(hidden: hideDockIcon)
+        }
+    }
+
+    private func setDockIconVisibility(hidden: Bool) {
+        if hidden {
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            NSApp.setActivationPolicy(.regular)
+        }
     }
 }
 
