@@ -12,9 +12,44 @@ actor IMAPService {
     private let maxReconnectAttempts = 3
 
     private let account: EmailAccount
+    private var throttleTracker: ThrottleTracker?
+    private var rateLimitSettings: RateLimitSettings
 
     init(account: EmailAccount) {
         self.account = account
+        self.rateLimitSettings = RateLimitSettings.default
+    }
+
+    /// Configure rate limiting for this service
+    func configureRateLimit(settings: RateLimitSettings) {
+        self.rateLimitSettings = settings
+        self.throttleTracker = ThrottleTracker(settings: settings)
+    }
+
+    /// Get or create throttle tracker
+    private func getThrottleTracker() -> ThrottleTracker {
+        if let tracker = throttleTracker {
+            return tracker
+        }
+        let tracker = ThrottleTracker(settings: rateLimitSettings)
+        throttleTracker = tracker
+        return tracker
+    }
+
+    /// Apply rate limiting before a request
+    private func applyRateLimit() async {
+        guard rateLimitSettings.isEnabled else { return }
+        await getThrottleTracker().waitForRateLimit()
+    }
+
+    /// Record throttling response from server
+    private func recordThrottle() async {
+        await getThrottleTracker().recordThrottle()
+    }
+
+    /// Record successful request
+    private func recordSuccess() async {
+        await getThrottleTracker().recordSuccess()
     }
 
     // MARK: - Connection Recovery
@@ -225,6 +260,9 @@ actor IMAPService {
             throw IMAPError.notConnected
         }
 
+        // Apply rate limiting before sending command
+        await applyRateLimit()
+
         tagCounter += 1
         let tag = "A\(String(format: "%04d", tagCounter))"
         let fullCommand = "\(tag) \(command)\r\n"
@@ -253,6 +291,14 @@ actor IMAPService {
             if chunk.contains("\(tag) OK") || chunk.contains("\(tag) NO") || chunk.contains("\(tag) BAD") {
                 break
             }
+        }
+
+        // Check for throttling indicators in response
+        if RateLimitService.isThrottleResponse(fullResponse) {
+            await recordThrottle()
+            logWarning("Server throttle detected in response")
+        } else {
+            await recordSuccess()
         }
 
         return fullResponse

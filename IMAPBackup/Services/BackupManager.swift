@@ -332,6 +332,11 @@ class BackupManager: ObservableObject {
         let imapService = IMAPService(account: account)
         let storageService = StorageService(baseURL: backupLocation)
 
+        // Configure rate limiting
+        let rateLimitSettings = RateLimitService.shared.getSettings(for: account.id)
+        await imapService.configureRateLimit(settings: rateLimitSettings)
+        logDebug("Rate limiting configured: \(rateLimitSettings.requestDelayMs)ms delay, enabled: \(rateLimitSettings.isEnabled)")
+
         // Start history entry
         let historyId = BackupHistoryService.shared.startEntry(for: account.email)
         activeHistoryIds[account.id] = historyId

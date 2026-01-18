@@ -23,13 +23,13 @@
 ## Storage & Sync
 
 - [ ] **Attachment Extraction** - Option to extract attachments to separate folders
-- [ ] **Retention Policies** - Auto-delete old backups based on age or count
+- [x] **Retention Policies** - Auto-delete old backups based on age or count
 - [ ] **Backup Verification** - Verify backed up emails match server state
 
 ## Performance
 
 - [x] **Parallel Downloads** - Download multiple emails concurrently (v0.2.0)
-- [ ] **Rate Limiting** - Respect server limits with configurable throttling
+- [x] **Rate Limiting** - Respect server limits with configurable throttling
 - [ ] **Large Attachment Streaming** - Stream large attachments to disk instead of memory
 
 ## Error Handling
