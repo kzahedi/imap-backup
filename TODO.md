@@ -10,15 +10,15 @@
 
 - [ ] **Internet Accounts Integration** - Read credentials from macOS Accounts.framework
 - [ ] **OAuth2 for Google** - Use AuthenticationServices for Google account OAuth tokens
-- [ ] **Secure Credential Storage** - Store passwords in macOS Keychain instead of UserDefaults
+- [x] **Secure Credential Storage** - Passwords stored in macOS Keychain
 
 ## User Interface
 
 - [ ] **Backup History/Log View** - Show history of past backups with details
 - [ ] **Notifications** - System notifications on backup completion or errors
-- [ ] **Start at Login** - Launch app automatically on macOS startup (LoginItems)
-- [ ] **Dock Icon Toggle** - Option to hide dock icon (menubar-only mode)
-- [ ] **Password Manager Integration** - macOS password autofill in SwiftUI sheets (using NSSecureTextField workaround)
+- [x] **Start at Login** - Launch app automatically on macOS startup (SMAppService)
+- [x] **Dock Icon Toggle** - Option to hide dock icon (menubar-only mode)
+- [x] **Password Manager Integration** - macOS password autofill in SwiftUI sheets (using NSSecureTextField)
 
 ## Storage & Sync
 
