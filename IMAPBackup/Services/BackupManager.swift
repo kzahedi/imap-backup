@@ -316,6 +316,14 @@ class BackupManager: ObservableObject {
             totalDownloaded: totalDownloaded,
             totalErrors: totalErrors
         )
+
+        // Apply retention policies after all backups complete
+        Task {
+            let result = await RetentionService.shared.applyRetentionToAll(backupLocation: backupLocation)
+            if result.filesDeleted > 0 {
+                logInfo("Retention policy applied: deleted \(result.filesDeleted) files, freed \(result.bytesFreedFormatted)")
+            }
+        }
     }
 
     // MARK: - Backup Execution

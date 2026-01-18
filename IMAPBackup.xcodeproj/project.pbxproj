@@ -32,6 +32,7 @@
 		B10000010000000000000019 /* BackupHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000019 /* BackupHistoryService.swift */; };
 		B1000001000000000000001A /* BackupHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001A /* BackupHistoryView.swift */; };
 		B1000001000000000000001B /* LoggingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001B /* LoggingService.swift */; };
+		B1000001000000000000001C /* RetentionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001C /* RetentionService.swift */; };
 		C10000010000000000000001 /* EmailParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000001 /* EmailParserTests.swift */; };
 		C10000010000000000000002 /* DatabaseServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000002 /* DatabaseServiceTests.swift */; };
 		C10000010000000000000003 /* SearchServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000003 /* SearchServiceTests.swift */; };
@@ -77,6 +78,7 @@
 		B10000020000000000000019 /* BackupHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryService.swift; sourceTree = "<group>"; };
 		B1000002000000000000001A /* BackupHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryView.swift; sourceTree = "<group>"; };
 		B1000002000000000000001B /* LoggingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoggingService.swift; sourceTree = "<group>"; };
+		B1000002000000000000001C /* RetentionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetentionService.swift; sourceTree = "<group>"; };
 		B10000030000000000000001 /* IMAPBackup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IMAPBackup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000020000000000000001 /* EmailParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailParserTests.swift; sourceTree = "<group>"; };
 		C10000020000000000000002 /* DatabaseServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseServiceTests.swift; sourceTree = "<group>"; };
@@ -186,6 +188,7 @@
 				B10000020000000000000017 /* NotificationService.swift */,
 				B10000020000000000000019 /* BackupHistoryService.swift */,
 				B1000002000000000000001B /* LoggingService.swift */,
+				B1000002000000000000001C /* RetentionService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -347,6 +350,7 @@
 				B10000010000000000000019 /* BackupHistoryService.swift in Sources */,
 				B1000001000000000000001A /* BackupHistoryView.swift in Sources */,
 				B1000001000000000000001B /* LoggingService.swift in Sources */,
+				B1000001000000000000001C /* RetentionService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
