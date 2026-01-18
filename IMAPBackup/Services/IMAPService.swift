@@ -7,11 +7,85 @@ actor IMAPService {
     private var isConnected = false
     private var responseBuffer = ""
     private var tagCounter = 0
+    private var currentFolder: String?
+    private var reconnectAttempts = 0
+    private let maxReconnectAttempts = 3
 
     private let account: EmailAccount
 
     init(account: EmailAccount) {
         self.account = account
+    }
+
+    // MARK: - Connection Recovery
+
+    /// Check if the connection appears to be healthy
+    private func isConnectionHealthy() -> Bool {
+        guard let conn = connection else { return false }
+        return conn.state == .ready && isConnected
+    }
+
+    /// Attempt to reconnect with exponential backoff
+    private func attemptReconnect() async throws {
+        guard reconnectAttempts < maxReconnectAttempts else {
+            logError("Max reconnection attempts (\(maxReconnectAttempts)) reached")
+            throw IMAPError.connectionFailed("Max reconnection attempts reached")
+        }
+
+        reconnectAttempts += 1
+        let delay = UInt64(pow(2.0, Double(reconnectAttempts - 1))) * 1_000_000_000
+        logInfo("Attempting reconnect (attempt \(reconnectAttempts)/\(maxReconnectAttempts)) after \(reconnectAttempts)s delay")
+
+        try await Task.sleep(nanoseconds: delay)
+
+        // Disconnect cleanly first
+        await disconnect()
+
+        // Reconnect
+        try await connect()
+        try await login()
+
+        // Re-select folder if we had one selected
+        if let folder = currentFolder {
+            _ = try await selectFolder(folder)
+        }
+
+        logInfo("Reconnection successful")
+        reconnectAttempts = 0  // Reset on success
+    }
+
+    /// Execute a command with automatic reconnection on failure
+    private func executeWithRecovery<T>(_ operation: () async throws -> T) async throws -> T {
+        do {
+            return try await operation()
+        } catch {
+            // Check if this is a connection error that we can recover from
+            if isRecoverableError(error) {
+                logWarning("Connection error detected: \(error.localizedDescription). Attempting recovery...")
+                try await attemptReconnect()
+                // Retry the operation once after reconnecting
+                return try await operation()
+            }
+            throw error
+        }
+    }
+
+    /// Determine if an error is recoverable via reconnection
+    private func isRecoverableError(_ error: Error) -> Bool {
+        if let imapError = error as? IMAPError {
+            switch imapError {
+            case .notConnected, .connectionFailed, .sendFailed, .receiveFailed:
+                return true
+            default:
+                return false
+            }
+        }
+        // Network errors are generally recoverable
+        let nsError = error as NSError
+        return nsError.domain == NSPOSIXErrorDomain ||
+               nsError.domain == "NWError" ||
+               nsError.code == -1009 || // No internet connection
+               nsError.code == -1001    // Request timed out
     }
 
     // MARK: - Connection Management
@@ -121,6 +195,7 @@ actor IMAPService {
     func selectFolder(_ folder: String) async throws -> FolderStatus {
         let escapedFolder = folder.replacingOccurrences(of: "\"", with: "\\\"")
         let response = try await sendCommand("SELECT \"\(escapedFolder)\"")
+        currentFolder = folder  // Track for reconnection
         return parseFolderStatus(response)
     }
 
@@ -132,8 +207,10 @@ actor IMAPService {
     }
 
     func fetchEmail(uid: UInt32) async throws -> Data {
-        let response = try await sendCommand("UID FETCH \(uid) BODY.PEEK[]")
-        return extractEmailData(from: response)
+        return try await executeWithRecovery {
+            let response = try await self.sendCommand("UID FETCH \(uid) BODY.PEEK[]")
+            return self.extractEmailData(from: response)
+        }
     }
 
     func searchAll() async throws -> [UInt32] {
