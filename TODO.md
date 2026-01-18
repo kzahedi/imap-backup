@@ -30,7 +30,7 @@
 
 - [x] **Parallel Downloads** - Download multiple emails concurrently (v0.2.0)
 - [x] **Rate Limiting** - Respect server limits with configurable throttling
-- [ ] **Large Attachment Streaming** - Stream large attachments to disk instead of memory
+- [x] **Large Attachment Streaming** - Stream large attachments to disk instead of memory
 
 ## Error Handling
 

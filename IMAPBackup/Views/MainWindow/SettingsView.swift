@@ -139,6 +139,25 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
+
+            Section("Large Attachments") {
+                let thresholdMB = Binding(
+                    get: { backupManager.streamingThresholdBytes / (1024 * 1024) },
+                    set: { backupManager.setStreamingThreshold($0 * 1024 * 1024) }
+                )
+
+                Stepper(
+                    "Stream emails larger than \(thresholdMB.wrappedValue) MB",
+                    value: thresholdMB,
+                    in: 1...100,
+                    step: 5
+                )
+                .help("Emails larger than this threshold are streamed directly to disk to reduce memory usage")
+
+                Text("Large emails with attachments are streamed directly to disk instead of loading into memory. This reduces memory usage when backing up emails with large attachments.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()

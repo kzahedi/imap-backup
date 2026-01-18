@@ -61,6 +61,33 @@ actor StorageService {
         return finalURL
     }
 
+    /// Prepare a destination URL for streaming large emails directly to disk
+    func prepareStreamingDestination(email: Email, accountEmail: String, folderPath: String) throws -> (tempURL: URL, finalURL: URL) {
+        let folderURL = try createFolderDirectory(accountEmail: accountEmail, folderPath: folderPath)
+        let filename = email.filename()
+        let fileURL = folderURL.appendingPathComponent(filename)
+        let finalURL = uniqueFileURL(for: fileURL)
+        let tempURL = finalURL.appendingPathExtension("tmp")
+        return (tempURL, finalURL)
+    }
+
+    /// Finalize a streamed file by moving from temp to final location
+    func finalizeStreamedFile(tempURL: URL, finalURL: URL) throws {
+        if fileManager.fileExists(atPath: finalURL.path) {
+            try fileManager.removeItem(at: finalURL)
+        }
+        try fileManager.moveItem(at: tempURL, to: finalURL)
+    }
+
+    /// Read headers from a saved .eml file for metadata extraction
+    func readEmailHeaders(at url: URL, maxBytes: Int = 32768) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: url.path) else { return nil }
+        defer { try? handle.close() }
+
+        let data = handle.readData(ofLength: maxBytes)
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii)
+    }
+
     /// Clean up any orphaned temp files from interrupted downloads
     func cleanupIncompleteDownloads() throws -> Int {
         var cleanedCount = 0

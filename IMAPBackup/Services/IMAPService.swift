@@ -248,6 +248,149 @@ actor IMAPService {
         }
     }
 
+    /// Fetch email size without downloading the full body
+    func fetchEmailSize(uid: UInt32) async throws -> Int {
+        return try await executeWithRecovery {
+            let response = try await self.sendCommand("UID FETCH \(uid) RFC822.SIZE")
+            return self.extractEmailSize(from: response)
+        }
+    }
+
+    /// Stream email directly to file for large messages
+    func streamEmailToFile(uid: UInt32, destinationURL: URL) async throws -> Int64 {
+        return try await executeWithRecovery {
+            try await self.performStreamingFetch(uid: uid, destinationURL: destinationURL)
+        }
+    }
+
+    /// Perform streaming fetch directly to disk
+    private func performStreamingFetch(uid: UInt32, destinationURL: URL) async throws -> Int64 {
+        guard let connection = connection else {
+            throw IMAPError.notConnected
+        }
+
+        // Apply rate limiting
+        await applyRateLimit()
+
+        tagCounter += 1
+        let tag = "A\(String(format: "%04d", tagCounter))"
+        let command = "\(tag) UID FETCH \(uid) BODY.PEEK[]\r\n"
+
+        // Create temp file for streaming
+        let tempURL = destinationURL.appendingPathExtension("streaming")
+        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+        let fileHandle = try FileHandle(forWritingTo: tempURL)
+
+        defer {
+            try? fileHandle.close()
+        }
+
+        // Send command
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(
+                content: command.data(using: .utf8),
+                completion: .contentProcessed { error in
+                    if let error = error {
+                        continuation.resume(throwing: IMAPError.sendFailed(error.localizedDescription))
+                    } else {
+                        continuation.resume()
+                    }
+                }
+            )
+        }
+
+        // Read response and stream to file
+        var totalBytesWritten: Int64 = 0
+        var headerBuffer = ""
+        var foundLiteralSize = false
+        var literalSize: Int = 0
+        var literalBytesReceived: Int = 0
+        var isComplete = false
+
+        while !isComplete {
+            let chunk = try await readResponse()
+
+            if !foundLiteralSize {
+                // Still looking for the literal size in the header
+                headerBuffer += chunk
+
+                // Look for {size} pattern
+                if let braceStart = headerBuffer.range(of: "{"),
+                   let braceEnd = headerBuffer.range(of: "}", range: braceStart.upperBound..<headerBuffer.endIndex) {
+
+                    let sizeString = String(headerBuffer[braceStart.upperBound..<braceEnd.lowerBound])
+                    if let size = Int(sizeString) {
+                        literalSize = size
+                        foundLiteralSize = true
+                        logDebug("Streaming email UID \(uid): \(size) bytes")
+
+                        // Find where the actual data starts (after }\r\n)
+                        if let dataStart = headerBuffer.range(of: "}\r\n")?.upperBound {
+                            let remainingData = String(headerBuffer[dataStart...])
+                            if let data = remainingData.data(using: .utf8) ?? remainingData.data(using: .ascii) {
+                                let bytesToWrite = min(data.count, literalSize)
+                                if bytesToWrite > 0 {
+                                    try fileHandle.write(contentsOf: data.prefix(bytesToWrite))
+                                    literalBytesReceived += bytesToWrite
+                                    totalBytesWritten += Int64(bytesToWrite)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Streaming mode - write data directly to file
+                let bytesRemaining = literalSize - literalBytesReceived
+
+                if bytesRemaining > 0 {
+                    if let data = chunk.data(using: .utf8) ?? chunk.data(using: .ascii) {
+                        let bytesToWrite = min(data.count, bytesRemaining)
+                        if bytesToWrite > 0 {
+                            try fileHandle.write(contentsOf: data.prefix(bytesToWrite))
+                            literalBytesReceived += bytesToWrite
+                            totalBytesWritten += Int64(bytesToWrite)
+                        }
+                    }
+                }
+            }
+
+            // Check for completion
+            if chunk.contains("\(tag) OK") || chunk.contains("\(tag) NO") || chunk.contains("\(tag) BAD") {
+                isComplete = true
+
+                // Check for throttling
+                if RateLimitService.isThrottleResponse(chunk) {
+                    await recordThrottle()
+                } else {
+                    await recordSuccess()
+                }
+            }
+        }
+
+        // Close file handle
+        try fileHandle.close()
+
+        // Move temp file to final destination
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try FileManager.default.removeItem(at: destinationURL)
+        }
+        try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+
+        return totalBytesWritten
+    }
+
+    /// Extract email size from RFC822.SIZE response
+    private func extractEmailSize(from response: String) -> Int {
+        // Response format: * uid FETCH (RFC822.SIZE size)
+        let pattern = #"RFC822\.SIZE\s+(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: response, range: NSRange(response.startIndex..., in: response)),
+              let sizeRange = Range(match.range(at: 1), in: response) else {
+            return 0
+        }
+        return Int(response[sizeRange]) ?? 0
+    }
+
     func searchAll() async throws -> [UInt32] {
         let response = try await sendCommand("UID SEARCH ALL")
         return parseSearchResponse(response)

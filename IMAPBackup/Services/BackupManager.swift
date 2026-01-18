@@ -36,6 +36,10 @@ class BackupManager: ObservableObject {
     @Published var scheduledTime: Date = Calendar.current.date(bySettingHour: 2, minute: 0, second: 0, of: Date()) ?? Date()
     @Published var nextScheduledBackup: Date?
 
+    /// Threshold above which emails are streamed directly to disk (in bytes)
+    /// Default: 10 MB
+    @Published var streamingThresholdBytes: Int = 10 * 1024 * 1024
+
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
     private var activeHistoryIds: [UUID: UUID] = [:]  // Account ID -> History Entry ID
     private var scheduleTimer: Timer?
@@ -43,6 +47,7 @@ class BackupManager: ObservableObject {
     private let scheduleKey = "BackupSchedule"
     private let scheduleTimeKey = "BackupScheduleTime"
     private let backupLocationKey = "BackupLocation"
+    private let streamingThresholdKey = "StreamingThresholdBytes"
 
     init() {
         // Load backup location or set default
@@ -56,6 +61,11 @@ class BackupManager: ObservableObject {
         // Load saved accounts and schedule
         loadAccounts()
         loadSchedule()
+
+        // Load streaming threshold
+        if UserDefaults.standard.object(forKey: streamingThresholdKey) != nil {
+            streamingThresholdBytes = UserDefaults.standard.integer(forKey: streamingThresholdKey)
+        }
 
         // Create backup directory
         try? FileManager.default.createDirectory(at: backupLocation, withIntermediateDirectories: true)
@@ -485,41 +495,93 @@ class BackupManager: ObservableObject {
             var lastError: Error?
             for attempt in 1...3 {
                 do {
-                    let emailData = try await imapService.fetchEmail(uid: uid)
+                    // Check email size first to decide whether to stream
+                    let emailSize = try await imapService.fetchEmailSize(uid: uid)
+                    let useStreaming = emailSize > streamingThresholdBytes
 
-                    // Verify download - check for valid email structure
-                    guard emailData.count > 0,
-                          let content = String(data: emailData, encoding: .utf8) ?? String(data: emailData, encoding: .ascii),
-                          content.contains("From:") || content.contains("Date:") || content.contains("Subject:") else {
-                        throw BackupManagerError.invalidEmailData
+                    var bytesDownloaded: Int64 = 0
+                    var email: Email
+                    var parsed: ParsedEmail?
+
+                    if useStreaming {
+                        // Stream large email directly to disk
+                        logInfo("Streaming large email (UID: \(uid), size: \(ByteCountFormatter.string(fromByteCount: Int64(emailSize), countStyle: .file)))")
+
+                        // Create placeholder email for filename
+                        email = Email(
+                            messageId: UUID().uuidString,
+                            uid: uid,
+                            folder: folder.path,
+                            subject: "(Streaming)",
+                            sender: "Unknown",
+                            senderEmail: "",
+                            date: Date()
+                        )
+
+                        let (tempURL, finalURL) = try await storageService.prepareStreamingDestination(
+                            email: email,
+                            accountEmail: account.email,
+                            folderPath: folder.path
+                        )
+
+                        // Stream directly to disk
+                        bytesDownloaded = try await imapService.streamEmailToFile(uid: uid, destinationURL: tempURL)
+
+                        // Move to final location
+                        try await storageService.finalizeStreamedFile(tempURL: tempURL, finalURL: finalURL)
+
+                        // Read headers from saved file for metadata
+                        if let headerContent = await storageService.readEmailHeaders(at: finalURL) {
+                            if let headerData = headerContent.data(using: .utf8) {
+                                parsed = EmailParser.parseMetadata(from: headerData)
+                            }
+                        }
+
+                        // Update email with parsed metadata (file is already saved with placeholder name)
+                        // In streaming mode, we keep the placeholder filename but log the actual subject
+                        if let p = parsed {
+                            logDebug("Streamed email: \(p.subject ?? "(No Subject)") from \(p.senderEmail ?? "unknown")")
+                        }
+
+                    } else {
+                        // Normal in-memory download for smaller emails
+                        let emailData = try await imapService.fetchEmail(uid: uid)
+                        bytesDownloaded = Int64(emailData.count)
+
+                        // Verify download - check for valid email structure
+                        guard emailData.count > 0,
+                              let content = String(data: emailData, encoding: .utf8) ?? String(data: emailData, encoding: .ascii),
+                              content.contains("From:") || content.contains("Date:") || content.contains("Subject:") else {
+                            throw BackupManagerError.invalidEmailData
+                        }
+
+                        // Parse email headers to get metadata
+                        parsed = EmailParser.parseMetadata(from: emailData)
+
+                        let messageId = parsed?.messageId ?? UUID().uuidString
+                        email = Email(
+                            messageId: messageId,
+                            uid: uid,
+                            folder: folder.path,
+                            subject: parsed?.subject ?? "(No Subject)",
+                            sender: parsed?.senderName ?? "Unknown",
+                            senderEmail: parsed?.senderEmail ?? "",
+                            date: parsed?.date ?? Date()
+                        )
+
+                        // Save to disk (file existence = backup record, no database needed)
+                        _ = try await storageService.saveEmail(
+                            emailData,
+                            email: email,
+                            accountEmail: account.email,
+                            folderPath: folder.path
+                        )
                     }
-
-                    // Parse email headers to get metadata
-                    let parsed = EmailParser.parseMetadata(from: emailData)
-
-                    let messageId = parsed?.messageId ?? UUID().uuidString
-                    let email = Email(
-                        messageId: messageId,
-                        uid: uid,
-                        folder: folder.path,
-                        subject: parsed?.subject ?? "(No Subject)",
-                        sender: parsed?.senderName ?? "Unknown",
-                        senderEmail: parsed?.senderEmail ?? "",
-                        date: parsed?.date ?? Date()
-                    )
-
-                    // Save to disk (file existence = backup record, no database needed)
-                    _ = try await storageService.saveEmail(
-                        emailData,
-                        email: email,
-                        accountEmail: account.email,
-                        folderPath: folder.path
-                    )
 
                     updateProgress(for: account.id) {
                         $0.downloadedEmails += 1
-                        $0.bytesDownloaded += Int64(emailData.count)
-                        $0.currentEmailSubject = email.subject
+                        $0.bytesDownloaded += bytesDownloaded
+                        $0.currentEmailSubject = parsed?.subject ?? "(No Subject)"
                     }
 
                     lastError = nil
@@ -605,6 +667,12 @@ class BackupManager: ObservableObject {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let localURL = documentsURL.appendingPathComponent("IMAPBackup")
         setBackupLocation(localURL)
+    }
+
+    /// Set the streaming threshold for large attachments
+    func setStreamingThreshold(_ bytes: Int) {
+        streamingThresholdBytes = bytes
+        UserDefaults.standard.set(bytes, forKey: streamingThresholdKey)
     }
 
     func selectBackupLocation() {
