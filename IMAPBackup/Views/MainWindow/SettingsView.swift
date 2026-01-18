@@ -158,6 +158,18 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Attachment Extraction") {
+                Toggle("Extract attachments to separate folders", isOn: Binding(
+                    get: { AttachmentExtractionManager.shared.settings.isEnabled },
+                    set: { AttachmentExtractionManager.shared.settings.isEnabled = $0 }
+                ))
+                .help("When enabled, attachments are extracted from emails and saved to separate folders")
+
+                Text("When enabled, attachments (PDFs, images, documents, etc.) are extracted from .eml files and saved to a subfolder next to each email. The original .eml file is preserved with embedded attachments.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()

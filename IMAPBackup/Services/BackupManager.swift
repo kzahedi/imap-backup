@@ -570,12 +570,23 @@ class BackupManager: ObservableObject {
                         )
 
                         // Save to disk (file existence = backup record, no database needed)
-                        _ = try await storageService.saveEmail(
+                        let savedURL = try await storageService.saveEmail(
                             emailData,
                             email: email,
                             accountEmail: account.email,
                             folderPath: folder.path
                         )
+
+                        // Extract attachments if enabled
+                        if AttachmentExtractionManager.shared.settings.isEnabled {
+                            await extractAttachments(
+                                from: emailData,
+                                emailURL: savedURL,
+                                accountEmail: account.email,
+                                folderPath: folder.path,
+                                storageService: storageService
+                            )
+                        }
                     }
 
                     updateProgress(for: account.id) {
@@ -607,6 +618,34 @@ class BackupManager: ObservableObject {
                     ))
                 }
             }
+        }
+    }
+
+    // MARK: - Attachment Extraction
+
+    private func extractAttachments(
+        from emailData: Data,
+        emailURL: URL,
+        accountEmail: String,
+        folderPath: String,
+        storageService: StorageService
+    ) async {
+        let attachmentService = AttachmentService()
+        let attachments = await attachmentService.extractAttachments(from: emailData)
+
+        guard !attachments.isEmpty else { return }
+
+        // Create attachment folder (same name as email file without extension)
+        let emailFilename = emailURL.deletingPathExtension().lastPathComponent
+        let attachmentFolderURL = emailURL.deletingLastPathComponent().appendingPathComponent("\(emailFilename)_attachments")
+
+        do {
+            let savedURLs = try await attachmentService.saveAttachments(attachments, to: attachmentFolderURL)
+            if !savedURLs.isEmpty {
+                logDebug("Extracted \(savedURLs.count) attachment(s) from \(emailFilename)")
+            }
+        } catch {
+            logWarning("Failed to extract attachments from \(emailFilename): \(error.localizedDescription)")
         }
     }
 
