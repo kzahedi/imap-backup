@@ -2,9 +2,9 @@
 
 ## Core Features
 
-- [ ] **Resume Interrupted Downloads** - Track incomplete downloads and resume from last position
-- [ ] **Verify Incomplete Downloads** - Check file integrity and re-download corrupted files
-- [ ] **Retry Failed Downloads** - Automatic retry with exponential backoff for failed emails
+- [x] **Resume Interrupted Downloads** - Atomic writes with temp files, cleanup on startup
+- [x] **Verify Incomplete Downloads** - Validate email structure before saving
+- [x] **Retry Failed Downloads** - Exponential backoff (1s, 2s, 4s), max 3 attempts
 
 ## Account Management
 

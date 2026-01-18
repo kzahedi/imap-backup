@@ -73,20 +73,34 @@ class BackupManager: ObservableObject {
 
     // MARK: - Account Management
 
-    func addAccount(_ account: EmailAccount) {
+    func addAccount(_ account: EmailAccount, password: String) {
         accounts.append(account)
         saveAccounts()
+        // Save password to Keychain
+        Task {
+            try? await KeychainService.shared.savePassword(password, for: account.id)
+        }
     }
 
     func removeAccount(_ account: EmailAccount) {
         accounts.removeAll { $0.id == account.id }
         saveAccounts()
+        // Remove password from Keychain
+        Task {
+            try? await KeychainService.shared.deletePassword(for: account.id)
+        }
     }
 
-    func updateAccount(_ account: EmailAccount) {
+    func updateAccount(_ account: EmailAccount, password: String? = nil) {
         if let index = accounts.firstIndex(where: { $0.id == account.id }) {
             accounts[index] = account
             saveAccounts()
+            // Update password in Keychain if provided
+            if let password = password {
+                Task {
+                    try? await KeychainService.shared.savePassword(password, for: account.id)
+                }
+            }
         }
     }
 

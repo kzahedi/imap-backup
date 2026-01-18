@@ -221,7 +221,7 @@ struct AddAccountView: View {
 
     func addAccount() {
         let account = createAccount()
-        backupManager.addAccount(account)
+        backupManager.addAccount(account, password: password)
         dismiss()
     }
 
@@ -230,7 +230,7 @@ struct AddAccountView: View {
             email: email,
             imapServer: imapServer,
             port: Int(port) ?? 993,
-            password: password,
+            password: password,  // Used temporarily for testing, stored in Keychain
             useSSL: useSSL
         )
     }

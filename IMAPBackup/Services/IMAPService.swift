@@ -70,19 +70,28 @@ actor IMAPService {
 
     // MARK: - IMAP Commands
 
-    func login() async throws {
+    func login(password: String? = nil) async throws {
         // Read server greeting
         _ = try await readResponse()
 
         // Trim whitespace from credentials
         let username = account.username.trimmingCharacters(in: .whitespacesAndNewlines)
-        let password = account.password.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Get password from parameter or Keychain
+        let pwd: String
+        if let p = password {
+            pwd = p.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let p = await account.getPassword() {
+            pwd = p.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            throw IMAPError.authenticationFailed
+        }
 
         // Escape special characters in credentials
         let escapedUsername = username
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let escapedPassword = password
+        let escapedPassword = pwd
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
 
