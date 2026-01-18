@@ -67,6 +67,9 @@ class BackupManager: ObservableObject {
             }
         }
 
+        // Initialize notification service
+        NotificationService.shared.setupNotificationCategories()
+
         // Start scheduler if needed
         updateScheduler()
     }
@@ -276,6 +279,31 @@ class BackupManager: ObservableObject {
         isBackingUp = !activeTasks.isEmpty
     }
 
+    private func checkAllBackupsComplete() {
+        // Only send summary if no more active tasks and we had multiple accounts
+        guard activeTasks.isEmpty else { return }
+
+        let completedCount = progress.values.filter {
+            $0.status == .completed || $0.status == .failed
+        }.count
+
+        guard completedCount > 1 else { return }
+
+        var totalDownloaded = 0
+        var totalErrors = 0
+
+        for (_, prog) in progress {
+            totalDownloaded += prog.downloadedEmails
+            totalErrors += prog.errors.count
+        }
+
+        NotificationService.shared.notifyAllBackupsCompleted(
+            totalAccounts: completedCount,
+            totalDownloaded: totalDownloaded,
+            totalErrors: totalErrors
+        )
+    }
+
     // MARK: - Backup Execution
 
     private func performBackup(for account: EmailAccount) async {
@@ -327,15 +355,34 @@ class BackupManager: ObservableObject {
 
             try await imapService.logout()
 
+            // Send completion notification
+            if let finalProgress = progress[account.id] {
+                NotificationService.shared.notifyBackupCompleted(
+                    account: account.email,
+                    emailsDownloaded: finalProgress.downloadedEmails,
+                    totalEmails: finalProgress.totalEmails,
+                    errors: finalProgress.errors.count
+                )
+            }
+
         } catch {
             updateProgress(for: account.id) {
                 $0.status = .failed
                 $0.errors.append(BackupError(message: error.localizedDescription))
             }
+
+            // Send failure notification
+            NotificationService.shared.notifyBackupFailed(
+                account: account.email,
+                error: error.localizedDescription
+            )
         }
 
         activeTasks.removeValue(forKey: account.id)
         updateIsBackingUp()
+
+        // Check if all backups are complete for summary notification
+        checkAllBackupsComplete()
     }
 
     private func backupFolder(
