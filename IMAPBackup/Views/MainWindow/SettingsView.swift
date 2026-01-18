@@ -31,6 +31,7 @@ struct GeneralSettingsView: View {
     @EnvironmentObject var backupManager: BackupManager
     @StateObject private var launchService = LaunchAtLoginService.shared
     @AppStorage("hideDockIcon") private var hideDockIcon = false
+    @AppStorage("LogLevel") private var logLevel = 1  // Default: info
 
     var body: some View {
         Form {
@@ -101,6 +102,32 @@ struct GeneralSettingsView: View {
                     .onChange(of: hideDockIcon) { _, newValue in
                         setDockIconVisibility(hidden: newValue)
                     }
+            }
+
+            Section("Logging") {
+                Picker("Log Level", selection: $logLevel) {
+                    Text("Debug").tag(0)
+                    Text("Info").tag(1)
+                    Text("Warning").tag(2)
+                    Text("Error").tag(3)
+                }
+                .pickerStyle(.menu)
+                .help("Set the minimum log level for file logging")
+
+                HStack {
+                    Button("Open Log File") {
+                        NSWorkspace.shared.selectFile(
+                            LoggingService.shared.getLogFileURL().path,
+                            inFileViewerRootedAtPath: LoggingService.shared.getLogDirectoryURL().path
+                        )
+                    }
+
+                    Button("Clear Logs") {
+                        Task {
+                            await LoggingService.shared.clearLogs()
+                        }
+                    }
+                }
             }
         }
         .formStyle(.grouped)

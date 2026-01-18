@@ -328,11 +328,15 @@ class BackupManager: ObservableObject {
         let historyId = BackupHistoryService.shared.startEntry(for: account.email)
         activeHistoryIds[account.id] = historyId
 
+        logInfo("Starting backup for account: \(account.email)")
+
         do {
             // Connect
             updateProgress(for: account.id) { $0.status = .connecting }
+            logDebug("Connecting to \(account.imapServer):\(account.port)")
             try await imapService.connect()
             try await imapService.login()
+            logInfo("Connected and authenticated to \(account.imapServer)")
 
             // Fetch folders
             updateProgress(for: account.id) { $0.status = .fetchingFolders }
@@ -375,6 +379,8 @@ class BackupManager: ObservableObject {
 
             // Update and complete history entry
             if let finalProgress = progress[account.id] {
+                logInfo("Backup completed for \(account.email): \(finalProgress.downloadedEmails) emails downloaded, \(finalProgress.errors.count) errors")
+
                 BackupHistoryService.shared.updateEntry(
                     id: historyId,
                     emailsDownloaded: finalProgress.downloadedEmails,
@@ -385,6 +391,7 @@ class BackupManager: ObservableObject {
 
                 let historyStatus: BackupHistoryStatus = finalProgress.errors.isEmpty ? .completed : .completedWithErrors
                 for error in finalProgress.errors {
+                    logWarning("Backup error for \(account.email): \(error.message)")
                     BackupHistoryService.shared.updateEntry(id: historyId, error: error.message)
                 }
                 BackupHistoryService.shared.completeEntry(id: historyId, status: historyStatus)
@@ -399,6 +406,8 @@ class BackupManager: ObservableObject {
             }
 
         } catch {
+            logError("Backup failed for \(account.email): \(error.localizedDescription)")
+
             updateProgress(for: account.id) {
                 $0.status = .failed
                 $0.errors.append(BackupError(message: error.localizedDescription))
