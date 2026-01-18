@@ -43,6 +43,7 @@ actor StorageService {
 
     // MARK: - Email Storage
 
+    /// Save email with atomic write to prevent partial files from interrupted downloads
     func saveEmail(_ emailData: Data, email: Email, accountEmail: String, folderPath: String) throws -> URL {
         let folderURL = try createFolderDirectory(accountEmail: accountEmail, folderPath: folderPath)
         let filename = email.filename()
@@ -51,8 +52,28 @@ actor StorageService {
         // Check for duplicate filename and increment if needed
         let finalURL = uniqueFileURL(for: fileURL)
 
-        try emailData.write(to: finalURL)
+        // Write to temp file first, then atomically move to final location
+        // This prevents partial files from interrupted downloads
+        let tempURL = finalURL.appendingPathExtension("tmp")
+        try emailData.write(to: tempURL)
+        try fileManager.moveItem(at: tempURL, to: finalURL)
+
         return finalURL
+    }
+
+    /// Clean up any orphaned temp files from interrupted downloads
+    func cleanupIncompleteDownloads() throws -> Int {
+        var cleanedCount = 0
+        let enumerator = fileManager.enumerator(at: baseURL, includingPropertiesForKeys: nil)
+
+        while let fileURL = enumerator?.nextObject() as? URL {
+            if fileURL.pathExtension == "tmp" {
+                try? fileManager.removeItem(at: fileURL)
+                cleanedCount += 1
+            }
+        }
+
+        return cleanedCount
     }
 
     func saveAttachment(_ data: Data, filename: String, email: Email, accountEmail: String, folderPath: String) throws -> URL {

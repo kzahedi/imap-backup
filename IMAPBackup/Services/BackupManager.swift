@@ -59,6 +59,14 @@ class BackupManager: ObservableObject {
         // Create backup directory
         try? FileManager.default.createDirectory(at: backupLocation, withIntermediateDirectories: true)
 
+        // Clean up any incomplete downloads from previous sessions
+        Task {
+            let storageService = StorageService(baseURL: backupLocation)
+            if let cleaned = try? await storageService.cleanupIncompleteDownloads(), cleaned > 0 {
+                print("Cleaned up \(cleaned) incomplete download(s)")
+            }
+        }
+
         // Start scheduler if needed
         updateScheduler()
     }
@@ -346,51 +354,88 @@ class BackupManager: ObservableObject {
 
         guard !newUIDs.isEmpty else { return }
 
-        // Download each new email
+        // Download each new email with retry logic
         updateProgress(for: account.id) { $0.status = .downloading }
 
         for uid in newUIDs {
             guard !Task.isCancelled else { break }
 
-            do {
-                let emailData = try await imapService.fetchEmail(uid: uid)
+            // Retry with exponential backoff (max 3 attempts)
+            var lastError: Error?
+            for attempt in 1...3 {
+                do {
+                    let emailData = try await imapService.fetchEmail(uid: uid)
 
-                // Parse email headers to get metadata
-                let parsed = EmailParser.parseMetadata(from: emailData)
+                    // Verify download - check for valid email structure
+                    guard emailData.count > 0,
+                          let content = String(data: emailData, encoding: .utf8) ?? String(data: emailData, encoding: .ascii),
+                          content.contains("From:") || content.contains("Date:") || content.contains("Subject:") else {
+                        throw BackupManagerError.invalidEmailData
+                    }
 
-                let messageId = parsed?.messageId ?? UUID().uuidString
-                let email = Email(
-                    messageId: messageId,
-                    uid: uid,
-                    folder: folder.path,
-                    subject: parsed?.subject ?? "(No Subject)",
-                    sender: parsed?.senderName ?? "Unknown",
-                    senderEmail: parsed?.senderEmail ?? "",
-                    date: parsed?.date ?? Date()
-                )
+                    // Parse email headers to get metadata
+                    let parsed = EmailParser.parseMetadata(from: emailData)
 
-                // Save to disk (file existence = backup record, no database needed)
-                _ = try await storageService.saveEmail(
-                    emailData,
-                    email: email,
-                    accountEmail: account.email,
-                    folderPath: folder.path
-                )
+                    let messageId = parsed?.messageId ?? UUID().uuidString
+                    let email = Email(
+                        messageId: messageId,
+                        uid: uid,
+                        folder: folder.path,
+                        subject: parsed?.subject ?? "(No Subject)",
+                        sender: parsed?.senderName ?? "Unknown",
+                        senderEmail: parsed?.senderEmail ?? "",
+                        date: parsed?.date ?? Date()
+                    )
 
-                updateProgress(for: account.id) {
-                    $0.downloadedEmails += 1
-                    $0.bytesDownloaded += Int64(emailData.count)
-                    $0.currentEmailSubject = email.subject
+                    // Save to disk (file existence = backup record, no database needed)
+                    _ = try await storageService.saveEmail(
+                        emailData,
+                        email: email,
+                        accountEmail: account.email,
+                        folderPath: folder.path
+                    )
+
+                    updateProgress(for: account.id) {
+                        $0.downloadedEmails += 1
+                        $0.bytesDownloaded += Int64(emailData.count)
+                        $0.currentEmailSubject = email.subject
+                    }
+
+                    lastError = nil
+                    break // Success, exit retry loop
+
+                } catch {
+                    lastError = error
+                    if attempt < 3 {
+                        // Exponential backoff: 1s, 2s, 4s
+                        let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
+                        try? await Task.sleep(nanoseconds: delay)
+                    }
                 }
+            }
 
-            } catch {
+            // Record error after all retries failed
+            if let error = lastError {
                 updateProgress(for: account.id) {
                     $0.errors.append(BackupError(
-                        message: error.localizedDescription,
+                        message: "Failed after 3 attempts: \(error.localizedDescription)",
                         folder: folder.name,
                         email: "UID: \(uid)"
                     ))
                 }
+            }
+        }
+    }
+
+    // MARK: - Errors
+
+    enum BackupManagerError: LocalizedError {
+        case invalidEmailData
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidEmailData:
+                return "Downloaded data does not appear to be a valid email"
             }
         }
     }
