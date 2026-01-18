@@ -15,7 +15,7 @@
 ## User Interface
 
 - [ ] **Backup History/Log View** - Show history of past backups with details
-- [ ] **Notifications** - System notifications on backup completion or errors
+- [x] **Notifications** - System notifications on backup completion or errors
 - [x] **Start at Login** - Launch app automatically on macOS startup (SMAppService)
 - [x] **Dock Icon Toggle** - Option to hide dock icon (menubar-only mode)
 - [x] **Password Manager Integration** - macOS password autofill in SwiftUI sheets (using NSSecureTextField)
