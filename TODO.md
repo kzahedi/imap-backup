@@ -24,7 +24,7 @@
 
 - [x] **Attachment Extraction** - Option to extract attachments to separate folders
 - [x] **Retention Policies** - Auto-delete old backups based on age or count
-- [ ] **Backup Verification** - Verify backed up emails match server state
+- [x] **Backup Verification** - Verify backed up emails match server state
 
 ## Performance
 

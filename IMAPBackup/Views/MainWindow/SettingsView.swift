@@ -32,8 +32,13 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Rate Limit", systemImage: "speedometer")
                 }
+
+            VerificationSettingsView()
+                .tabItem {
+                    Label("Verify", systemImage: "checkmark.shield")
+                }
         }
-        .frame(width: 500, height: 480)
+        .frame(width: 500, height: 500)
     }
 }
 
@@ -397,6 +402,134 @@ struct RetentionSettingsView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text("Retention policies permanently delete email backups. Deleted emails cannot be recovered.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+struct VerificationResultsListView: View {
+    let results: [AccountVerificationResult]
+
+    var body: some View {
+        Group {
+            ForEach(results, id: \.id) { (result: AccountVerificationResult) in
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(result.accountEmail)
+                        .font(.headline)
+                    Spacer()
+                    if result.isFullySynced {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                }
+
+                Text(result.summary)
+                    .font(.caption)
+                    .foregroundColor(result.isFullySynced ? .secondary : .orange)
+
+                HStack {
+                    Text("Server: \(result.totalServerEmails) emails")
+                    Text("•")
+                    Text("Local: \(result.totalLocalEmails) emails")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+                Text("Verified \(result.verifiedAt, style: .relative) ago")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+            }
+        }
+    }
+}
+
+struct VerificationSettingsView: View {
+    @EnvironmentObject var backupManager: BackupManager
+    @StateObject private var verificationService = VerificationService.shared
+
+    private var verificationResults: [AccountVerificationResult] {
+        verificationService.lastResults
+    }
+
+    var body: some View {
+        Form {
+            Section("Backup Verification") {
+                HStack {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(.blue)
+                    Text("Verification compares your local backups with the email server to detect missing emails or emails that have been deleted on the server.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button(action: {
+                    Task {
+                        _ = await verificationService.verifyAll(
+                            accounts: backupManager.accounts,
+                            backupLocation: backupManager.backupLocation
+                        )
+                    }
+                }) {
+                    HStack {
+                        if verificationService.isVerifying {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Verifying...")
+                        } else {
+                            Image(systemName: "checkmark.shield")
+                            Text("Verify All Accounts")
+                        }
+                    }
+                }
+                .disabled(verificationService.isVerifying || backupManager.accounts.isEmpty)
+
+                if verificationService.isVerifying {
+                    if let account = verificationService.currentAccount {
+                        HStack {
+                            Text("Account:")
+                                .foregroundStyle(.secondary)
+                            Text(account)
+                        }
+                        .font(.caption)
+                    }
+                    if let folder = verificationService.currentFolder {
+                        HStack {
+                            Text("Folder:")
+                                .foregroundStyle(.secondary)
+                            Text(folder)
+                        }
+                        .font(.caption)
+                    }
+                }
+            }
+
+            if !verificationResults.isEmpty {
+                Section("Last Verification Results") {
+                    VerificationResultsListView(results: verificationResults)
+
+                    Button("Clear Results") {
+                        verificationService.clearResults()
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+
+            Section {
+                HStack {
+                    Image(systemName: "lightbulb.fill")
+                        .foregroundStyle(.yellow)
+                    Text("Run verification periodically to ensure your backups are complete. Missing emails will be downloaded on the next backup.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
