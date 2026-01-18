@@ -28,6 +28,9 @@
 		B10000010000000000000015 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000015 /* KeychainService.swift */; };
 		B10000010000000000000016 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000016 /* LaunchAtLoginService.swift */; };
 		B10000010000000000000017 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000017 /* NotificationService.swift */; };
+		B10000010000000000000018 /* BackupHistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000018 /* BackupHistoryEntry.swift */; };
+		B10000010000000000000019 /* BackupHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000019 /* BackupHistoryService.swift */; };
+		B1000001000000000000001A /* BackupHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001A /* BackupHistoryView.swift */; };
 		C10000010000000000000001 /* EmailParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000001 /* EmailParserTests.swift */; };
 		C10000010000000000000002 /* DatabaseServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000002 /* DatabaseServiceTests.swift */; };
 		C10000010000000000000003 /* SearchServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000003 /* SearchServiceTests.swift */; };
@@ -69,6 +72,9 @@
 		B10000020000000000000015 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		B10000020000000000000016 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
 		B10000020000000000000017 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		B10000020000000000000018 /* BackupHistoryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryEntry.swift; sourceTree = "<group>"; };
+		B10000020000000000000019 /* BackupHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryService.swift; sourceTree = "<group>"; };
+		B1000002000000000000001A /* BackupHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryView.swift; sourceTree = "<group>"; };
 		B10000030000000000000001 /* IMAPBackup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IMAPBackup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000020000000000000001 /* EmailParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailParserTests.swift; sourceTree = "<group>"; };
 		C10000020000000000000002 /* DatabaseServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseServiceTests.swift; sourceTree = "<group>"; };
@@ -159,6 +165,7 @@
 				B10000020000000000000003 /* EmailAccount.swift */,
 				B10000020000000000000004 /* Email.swift */,
 				B10000020000000000000005 /* BackupState.swift */,
+				B10000020000000000000018 /* BackupHistoryEntry.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -175,6 +182,7 @@
 				B10000020000000000000015 /* KeychainService.swift */,
 				B10000020000000000000016 /* LaunchAtLoginService.swift */,
 				B10000020000000000000017 /* NotificationService.swift */,
+				B10000020000000000000019 /* BackupHistoryService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -206,6 +214,7 @@
 				B10000020000000000000009 /* MainWindowView.swift */,
 				B1000002000000000000000C /* SettingsView.swift */,
 				B1000002000000000000000D /* AddAccountView.swift */,
+				B1000002000000000000001A /* BackupHistoryView.swift */,
 			);
 			path = MainWindow;
 			sourceTree = "<group>";
@@ -331,6 +340,9 @@
 				B10000010000000000000015 /* KeychainService.swift in Sources */,
 				B10000010000000000000016 /* LaunchAtLoginService.swift in Sources */,
 				B10000010000000000000017 /* NotificationService.swift in Sources */,
+				B10000010000000000000018 /* BackupHistoryEntry.swift in Sources */,
+				B10000010000000000000019 /* BackupHistoryService.swift in Sources */,
+				B1000001000000000000001A /* BackupHistoryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

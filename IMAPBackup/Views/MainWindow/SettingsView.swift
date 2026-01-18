@@ -17,8 +17,13 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Accounts", systemImage: "person.2")
                 }
+
+            BackupHistoryView()
+                .tabItem {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
         }
-        .frame(width: 500, height: 350)
+        .frame(width: 500, height: 400)
     }
 }
 

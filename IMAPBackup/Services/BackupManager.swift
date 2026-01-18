@@ -37,6 +37,7 @@ class BackupManager: ObservableObject {
     @Published var nextScheduledBackup: Date?
 
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
+    private var activeHistoryIds: [UUID: UUID] = [:]  // Account ID -> History Entry ID
     private var scheduleTimer: Timer?
     private let accountsKey = "EmailAccounts"
     private let scheduleKey = "BackupSchedule"
@@ -263,6 +264,13 @@ class BackupManager: ObservableObject {
         activeTasks[accountId]?.cancel()
         activeTasks.removeValue(forKey: accountId)
         progress[accountId]?.status = .cancelled
+
+        // Mark history entry as cancelled
+        if let historyId = activeHistoryIds[accountId] {
+            BackupHistoryService.shared.completeEntry(id: historyId, status: .cancelled)
+            activeHistoryIds.removeValue(forKey: accountId)
+        }
+
         updateIsBackingUp()
     }
 
@@ -270,8 +278,14 @@ class BackupManager: ObservableObject {
         for (id, task) in activeTasks {
             task.cancel()
             progress[id]?.status = .cancelled
+
+            // Mark history entry as cancelled
+            if let historyId = activeHistoryIds[id] {
+                BackupHistoryService.shared.completeEntry(id: historyId, status: .cancelled)
+            }
         }
         activeTasks.removeAll()
+        activeHistoryIds.removeAll()
         isBackingUp = false
     }
 
@@ -309,6 +323,10 @@ class BackupManager: ObservableObject {
     private func performBackup(for account: EmailAccount) async {
         let imapService = IMAPService(account: account)
         let storageService = StorageService(baseURL: backupLocation)
+
+        // Start history entry
+        let historyId = BackupHistoryService.shared.startEntry(for: account.email)
+        activeHistoryIds[account.id] = historyId
 
         do {
             // Connect
@@ -355,8 +373,23 @@ class BackupManager: ObservableObject {
 
             try await imapService.logout()
 
-            // Send completion notification
+            // Update and complete history entry
             if let finalProgress = progress[account.id] {
+                BackupHistoryService.shared.updateEntry(
+                    id: historyId,
+                    emailsDownloaded: finalProgress.downloadedEmails,
+                    totalEmails: finalProgress.totalEmails,
+                    bytesDownloaded: finalProgress.bytesDownloaded,
+                    foldersProcessed: finalProgress.processedFolders
+                )
+
+                let historyStatus: BackupHistoryStatus = finalProgress.errors.isEmpty ? .completed : .completedWithErrors
+                for error in finalProgress.errors {
+                    BackupHistoryService.shared.updateEntry(id: historyId, error: error.message)
+                }
+                BackupHistoryService.shared.completeEntry(id: historyId, status: historyStatus)
+
+                // Send completion notification
                 NotificationService.shared.notifyBackupCompleted(
                     account: account.email,
                     emailsDownloaded: finalProgress.downloadedEmails,
@@ -371,6 +404,10 @@ class BackupManager: ObservableObject {
                 $0.errors.append(BackupError(message: error.localizedDescription))
             }
 
+            // Complete history entry with failure
+            BackupHistoryService.shared.updateEntry(id: historyId, error: error.localizedDescription)
+            BackupHistoryService.shared.completeEntry(id: historyId, status: .failed)
+
             // Send failure notification
             NotificationService.shared.notifyBackupFailed(
                 account: account.email,
@@ -379,6 +416,7 @@ class BackupManager: ObservableObject {
         }
 
         activeTasks.removeValue(forKey: account.id)
+        activeHistoryIds.removeValue(forKey: account.id)
         updateIsBackingUp()
 
         // Check if all backups are complete for summary notification
