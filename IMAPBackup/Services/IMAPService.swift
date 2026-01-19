@@ -1,6 +1,27 @@
 import Foundation
 import Network
 
+// Simple trace logging to file and stderr
+private func trace(_ msg: String) {
+    let line = "\(Date()): \(msg)\n"
+    fputs(line, stderr)
+
+    // Also write to Documents folder
+    let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let logURL = docsURL.appendingPathComponent("imap_trace.log")
+    if let data = line.data(using: .utf8) {
+        if FileManager.default.fileExists(atPath: logURL.path) {
+            if let fh = try? FileHandle(forWritingTo: logURL) {
+                fh.seekToEndOfFile()
+                fh.write(data)
+                try? fh.close()
+            }
+        } else {
+            try? data.write(to: logURL)
+        }
+    }
+}
+
 /// IMAP Service for connecting to mail servers and fetching emails
 actor IMAPService {
     private var connection: NWConnection?
@@ -131,6 +152,7 @@ actor IMAPService {
     // MARK: - Connection Management
 
     func connect() async throws {
+        trace("connect() START for \(account.email)")
         let host = NWEndpoint.Host(account.imapServer)
         let port = NWEndpoint.Port(integerLiteral: UInt16(account.port))
 
@@ -140,28 +162,30 @@ actor IMAPService {
 
         connection = NWConnection(host: host, port: port, using: params)
 
-        // Use a class to track if continuation has been resumed (reference type for closure capture)
-        class ContinuationState {
-            var hasResumed = false
-        }
+        class ContinuationState { var hasResumed = false }
         let state = ContinuationState()
+
+        logInfo("Connecting to \(account.imapServer):\(account.port)...")
 
         return try await withCheckedThrowingContinuation { continuation in
             connection?.stateUpdateHandler = { [weak self] connectionState in
-                // Only resume once
+                trace("connect() state=\(connectionState)")
                 guard !state.hasResumed else { return }
 
                 switch connectionState {
                 case .ready:
+                    trace("connect() READY")
                     state.hasResumed = true
-                    Task {
+                    Task { [weak self] in
                         await self?.setConnected(true)
-                        continuation.resume()
                     }
+                    continuation.resume()
                 case .failed(let error):
+                    trace("connect() FAILED: \(error)")
                     state.hasResumed = true
                     continuation.resume(throwing: IMAPError.connectionFailed(error.localizedDescription))
                 case .cancelled:
+                    trace("connect() CANCELLED")
                     state.hasResumed = true
                     continuation.resume(throwing: IMAPError.connectionCancelled)
                 default:
@@ -185,8 +209,11 @@ actor IMAPService {
     // MARK: - IMAP Commands
 
     func login(password: String? = nil) async throws {
+        trace("login() START")
         // Read server greeting
+        trace("login() reading greeting")
         _ = try await readResponse()
+        trace("login() got greeting")
 
         // Check authentication type
         if account.authType == .oauth2 {
@@ -194,18 +221,22 @@ actor IMAPService {
         } else {
             try await loginWithPassword(password: password)
         }
+        trace("login() DONE")
     }
 
     /// Login with traditional password authentication
     private func loginWithPassword(password: String? = nil) async throws {
+        trace("loginWithPassword() START")
         // Trim whitespace from credentials
         let username = account.username.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Get password from parameter or Keychain
+        trace("loginWithPassword() getting password")
         let pwd: String
         if let p = password {
             pwd = p.trimmingCharacters(in: .whitespacesAndNewlines)
         } else if let p = await account.getPassword() {
+            trace("loginWithPassword() got password from keychain")
             pwd = p.trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
             throw IMAPError.authenticationFailed
@@ -300,24 +331,23 @@ actor IMAPService {
     }
 
     func fetchEmail(uid: UInt32) async throws -> Data {
-        return try await executeWithRecovery {
-            try await self.fetchEmailWithLiteralParsing(uid: uid)
-        }
+        // Must use binary-safe fetch for emails with attachments
+        return try await fetchEmailWithLiteralParsing(uid: uid)
     }
 
     /// Fetch email with proper IMAP literal parsing
     private func fetchEmailWithLiteralParsing(uid: UInt32) async throws -> Data {
+        trace("fetchEmailWithLiteralParsing(\(uid)) START")
         guard let connection = connection else {
             throw IMAPError.notConnected
         }
-
-        await applyRateLimit()
 
         tagCounter += 1
         let tag = "A\(String(format: "%04d", tagCounter))"
         let command = "\(tag) UID FETCH \(uid) BODY.PEEK[]\r\n"
 
         // Send command
+        trace("fetchEmailWithLiteralParsing: sending command")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: command.data(using: .utf8), completion: .contentProcessed { error in
                 if let error = error {
@@ -327,16 +357,16 @@ actor IMAPService {
                 }
             })
         }
+        trace("fetchEmailWithLiteralParsing: command sent")
 
         // Simple state machine
         var allData = Data()
         var emailData = Data()
         var literalSize: Int? = nil
         var literalOffset: Int = 0
-        var literalBytesRead: Int = 0
 
-        // Read chunks until we have the complete response
         while true {
+            trace("fetchEmailWithLiteralParsing: reading chunk...")
             let chunk: Data = try await withCheckedThrowingContinuation { continuation in
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, error in
                     if let error = error {
@@ -348,23 +378,48 @@ actor IMAPService {
                     }
                 }
             }
+            trace("fetchEmailWithLiteralParsing: got \(chunk.count) bytes")
 
             allData.append(chunk)
+            trace("fetchEmailWithLiteralParsing: total \(allData.count) bytes, literalSize=\(literalSize ?? -1)")
 
             // Try to find literal size if we don't have it yet
+            // IMPORTANT: Search in RAW BYTES, not string - because email body may contain binary data
             if literalSize == nil {
-                // Only look at first 1KB for the IMAP header (rest may be binary)
-                let headerData = allData.prefix(1024)
-                if let str = String(data: headerData, encoding: .utf8) ?? String(data: headerData, encoding: .ascii) {
-                    // Look for {size}\r\n pattern
-                    if let braceStart = str.range(of: "{"),
-                       let braceEnd = str.range(of: "}\r\n", range: braceStart.upperBound..<str.endIndex),
-                       let size = Int(str[braceStart.upperBound..<braceEnd.lowerBound]) {
-                        literalSize = size
-                        // Calculate byte offset (not character offset!)
-                        let headerStr = String(str[..<braceEnd.upperBound])
-                        literalOffset = headerStr.utf8.count
-                        logDebug("fetchEmail UID \(uid): Found literal size \(size), data starts at byte offset \(literalOffset)")
+                // Search for {digits}\r\n pattern in raw bytes
+                // ASCII codes: { = 123, } = 125, \r = 13, \n = 10, 0-9 = 48-57
+                let openBrace: UInt8 = 123  // {
+                let closeBrace: UInt8 = 125 // }
+                let cr: UInt8 = 13          // \r
+                let lf: UInt8 = 10          // \n
+
+                // Find { in first 200 bytes (IMAP header is small)
+                if let bracePos = allData.prefix(200).firstIndex(of: openBrace) {
+                    // Find } after {
+                    var endPos = bracePos + 1
+                    var sizeDigits: [UInt8] = []
+                    while endPos < allData.count && allData[endPos] != closeBrace {
+                        let byte = allData[endPos]
+                        if byte >= 48 && byte <= 57 { // 0-9
+                            sizeDigits.append(byte)
+                        }
+                        endPos += 1
+                    }
+
+                    // Check for }\r\n sequence
+                    if endPos < allData.count && allData[endPos] == closeBrace {
+                        let hasFullSequence = endPos + 2 < allData.count &&
+                                              allData[endPos + 1] == cr &&
+                                              allData[endPos + 2] == lf
+
+                        if hasFullSequence && !sizeDigits.isEmpty {
+                            if let sizeStr = String(bytes: sizeDigits, encoding: .ascii),
+                               let size = Int(sizeStr) {
+                                literalSize = size
+                                literalOffset = endPos + 3 // After }\r\n
+                                trace("fetchEmailWithLiteralParsing: FOUND literal size=\(size), offset=\(literalOffset)")
+                            }
+                        }
                     }
                 }
             }
@@ -372,16 +427,37 @@ actor IMAPService {
             // If we know the literal size, check if we have all the data
             if let size = literalSize {
                 let availableBytes = allData.count - literalOffset
+                trace("fetchEmailWithLiteralParsing: need \(size) bytes, have \(availableBytes)")
+
                 if availableBytes >= size {
                     // We have all the literal data
                     emailData = Data(allData[literalOffset..<(literalOffset + size)])
-                    literalBytesRead = size
+                    trace("fetchEmailWithLiteralParsing: extracted \(emailData.count) bytes of email")
 
                     // Check if tagged response is present after the literal
-                    let afterLiteral = allData.suffix(from: literalOffset + size)
+                    // The tagged response should be ASCII text after the binary literal
+                    let afterLiteralStart = literalOffset + size
+                    let afterLiteral = allData.suffix(from: afterLiteralStart)
+                    trace("fetchEmailWithLiteralParsing: afterLiteral has \(afterLiteral.count) bytes")
+
+                    // Convert to string - this part should be ASCII (IMAP protocol)
                     if let afterStr = String(data: afterLiteral, encoding: .utf8) ?? String(data: afterLiteral, encoding: .ascii) {
+                        trace("fetchEmailWithLiteralParsing: afterStr='\(afterStr.prefix(80).replacingOccurrences(of: "\r\n", with: "\\r\\n"))'")
                         if afterStr.contains("\(tag) OK") || afterStr.contains("\(tag) NO") || afterStr.contains("\(tag) BAD") {
-                            logDebug("fetchEmail UID \(uid): Complete - \(emailData.count) bytes")
+                            trace("fetchEmailWithLiteralParsing: COMPLETE - found tagged response")
+                            break
+                        }
+                    } else {
+                        // Even if we can't convert, check raw bytes for tag
+                        let tagBytes = Data(tag.utf8)
+                        let okBytes = Data(" OK".utf8)
+                        let noBytes = Data(" NO".utf8)
+                        let badBytes = Data(" BAD".utf8)
+
+                        if afterLiteral.range(of: tagBytes + okBytes) != nil ||
+                           afterLiteral.range(of: tagBytes + noBytes) != nil ||
+                           afterLiteral.range(of: tagBytes + badBytes) != nil {
+                            trace("fetchEmailWithLiteralParsing: COMPLETE - found tagged response in raw bytes")
                             break
                         }
                     }
@@ -394,23 +470,19 @@ actor IMAPService {
             }
         }
 
-        await recordSuccess()
+        trace("fetchEmailWithLiteralParsing: DONE, got \(emailData.count) bytes")
         return emailData
     }
 
     /// Fetch email size without downloading the full body
     func fetchEmailSize(uid: UInt32) async throws -> Int {
-        return try await executeWithRecovery {
-            let response = try await self.sendCommand("UID FETCH \(uid) RFC822.SIZE")
-            return self.extractEmailSize(from: response)
-        }
+        let response = try await sendCommand("UID FETCH \(uid) RFC822.SIZE")
+        return extractEmailSize(from: response)
     }
 
     /// Stream email directly to file for large messages
     func streamEmailToFile(uid: UInt32, destinationURL: URL) async throws -> Int64 {
-        return try await executeWithRecovery {
-            try await self.performStreamingFetch(uid: uid, destinationURL: destinationURL)
-        }
+        try await performStreamingFetch(uid: uid, destinationURL: destinationURL)
     }
 
     /// Perform streaming fetch directly to disk
@@ -418,9 +490,6 @@ actor IMAPService {
         guard let connection = connection else {
             throw IMAPError.notConnected
         }
-
-        // Apply rate limiting
-        await applyRateLimit()
 
         tagCounter += 1
         let tag = "A\(String(format: "%04d", tagCounter))"
@@ -507,13 +576,6 @@ actor IMAPService {
             // Check for completion
             if chunk.contains("\(tag) OK") || chunk.contains("\(tag) NO") || chunk.contains("\(tag) BAD") {
                 isComplete = true
-
-                // Check for throttling
-                if RateLimitService.isThrottleResponse(chunk) {
-                    await recordThrottle()
-                } else {
-                    await recordSuccess()
-                }
             }
         }
 
@@ -549,25 +611,26 @@ actor IMAPService {
     // MARK: - Low-level Communication
 
     private func sendCommand(_ command: String) async throws -> String {
+        trace("sendCommand(\(command.prefix(30))...)")
         guard let connection = connection else {
             throw IMAPError.notConnected
         }
-
-        // Apply rate limiting before sending command
-        await applyRateLimit()
 
         tagCounter += 1
         let tag = "A\(String(format: "%04d", tagCounter))"
         let fullCommand = "\(tag) \(command)\r\n"
 
         // Send command
+        trace("sendCommand: sending...")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(
                 content: fullCommand.data(using: .utf8),
                 completion: .contentProcessed { error in
                     if let error = error {
+                        trace("sendCommand: send error \(error)")
                         continuation.resume(throwing: IMAPError.sendFailed(error.localizedDescription))
                     } else {
+                        trace("sendCommand: sent OK")
                         continuation.resume()
                     }
                 }
@@ -575,29 +638,18 @@ actor IMAPService {
         }
 
         // Read response until we get the tagged response
+        trace("sendCommand: reading response...")
         var fullResponse = ""
         while true {
             let chunk = try await readResponse()
             fullResponse += chunk
+            trace("sendCommand: got chunk \(chunk.count) chars")
 
             // Check if we have the complete tagged response
-            // Tagged responses in IMAP start at the beginning of a line
-            // We check for \r\n before the tag, or tag at the very start
-            let hasTaggedOK = chunk.contains("\r\n\(tag) OK") || chunk.hasPrefix("\(tag) OK")
-            let hasTaggedNO = chunk.contains("\r\n\(tag) NO") || chunk.hasPrefix("\(tag) NO")
-            let hasTaggedBAD = chunk.contains("\r\n\(tag) BAD") || chunk.hasPrefix("\(tag) BAD")
-
-            if hasTaggedOK || hasTaggedNO || hasTaggedBAD {
+            if chunk.contains("\(tag) OK") || chunk.contains("\(tag) NO") || chunk.contains("\(tag) BAD") {
+                trace("sendCommand: got tagged response")
                 break
             }
-        }
-
-        // Check for throttling indicators in response
-        if RateLimitService.isThrottleResponse(fullResponse) {
-            await recordThrottle()
-            logWarning("Server throttle detected in response")
-        } else {
-            await recordSuccess()
         }
 
         return fullResponse
@@ -611,13 +663,16 @@ actor IMAPService {
         return try await withCheckedThrowingContinuation { continuation in
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, error in
                 if let error = error {
+                    trace("readResponse: error \(error)")
                     continuation.resume(throwing: IMAPError.receiveFailed(error.localizedDescription))
                     return
                 }
 
                 if let data = data, let response = String(data: data, encoding: .utf8) {
+                    trace("readResponse: got \(data.count) bytes")
                     continuation.resume(returning: response)
                 } else {
+                    trace("readResponse: no data")
                     continuation.resume(returning: "")
                 }
             }
