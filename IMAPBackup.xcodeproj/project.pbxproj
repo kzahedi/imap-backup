@@ -41,6 +41,10 @@
 		C10000010000000000000003 /* SearchServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000003 /* SearchServiceTests.swift */; };
 		C10000010000000000000004 /* StorageServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000004 /* StorageServiceTests.swift */; };
 		C10000010000000000000005 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000005 /* ModelTests.swift */; };
+		C10000010000000000000006 /* RateLimitServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000006 /* RateLimitServiceTests.swift */; };
+		C10000010000000000000007 /* AttachmentServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000007 /* AttachmentServiceTests.swift */; };
+		C10000010000000000000008 /* VerificationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000008 /* VerificationServiceTests.swift */; };
+		C10000010000000000000009 /* RetentionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000009 /* RetentionServiceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -91,6 +95,10 @@
 		C10000020000000000000003 /* SearchServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchServiceTests.swift; sourceTree = "<group>"; };
 		C10000020000000000000004 /* StorageServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageServiceTests.swift; sourceTree = "<group>"; };
 		C10000020000000000000005 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
+		C10000020000000000000006 /* RateLimitServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateLimitServiceTests.swift; sourceTree = "<group>"; };
+		C10000020000000000000007 /* AttachmentServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentServiceTests.swift; sourceTree = "<group>"; };
+		C10000020000000000000008 /* VerificationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationServiceTests.swift; sourceTree = "<group>"; };
+		C10000020000000000000009 /* RetentionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetentionServiceTests.swift; sourceTree = "<group>"; };
 		C10000030000000000000002 /* IMAPBackupTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IMAPBackupTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -250,6 +258,10 @@
 				C10000020000000000000003 /* SearchServiceTests.swift */,
 				C10000020000000000000004 /* StorageServiceTests.swift */,
 				C10000020000000000000005 /* ModelTests.swift */,
+				C10000020000000000000006 /* RateLimitServiceTests.swift */,
+				C10000020000000000000007 /* AttachmentServiceTests.swift */,
+				C10000020000000000000008 /* VerificationServiceTests.swift */,
+				C10000020000000000000009 /* RetentionServiceTests.swift */,
 			);
 			path = IMAPBackupTests;
 			sourceTree = "<group>";
@@ -375,6 +387,10 @@
 				C10000010000000000000003 /* SearchServiceTests.swift in Sources */,
 				C10000010000000000000004 /* StorageServiceTests.swift in Sources */,
 				C10000010000000000000005 /* ModelTests.swift in Sources */,
+				C10000010000000000000006 /* RateLimitServiceTests.swift in Sources */,
+				C10000010000000000000007 /* AttachmentServiceTests.swift in Sources */,
+				C10000010000000000000008 /* VerificationServiceTests.swift in Sources */,
+				C10000010000000000000009 /* RetentionServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

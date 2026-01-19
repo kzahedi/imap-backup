@@ -229,7 +229,7 @@ final class ModelTests: XCTestCase {
 
     // MARK: - EmailAccount Tests
 
-    func testEmailAccountInitialization() {
+    func testEmailAccountInitialization() async {
         let account = EmailAccount(
             email: "test@example.com",
             imapServer: "imap.example.com",
@@ -241,7 +241,9 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(account.imapServer, "imap.example.com")
         XCTAssertEqual(account.port, 993)
         XCTAssertEqual(account.username, "test@example.com") // defaults to email
-        XCTAssertEqual(account.password, "secret")
+        // Password is stored in Keychain, check via getPassword()
+        let password = await account.getPassword()
+        XCTAssertEqual(password, "secret")
         XCTAssertTrue(account.useSSL)
         XCTAssertTrue(account.isEnabled)
         XCTAssertNil(account.lastBackupDate)
@@ -258,7 +260,7 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(account.username, "customuser")
     }
 
-    func testEmailAccountGmailFactory() {
+    func testEmailAccountGmailFactory() async {
         let account = EmailAccount.gmail(
             email: "user@gmail.com",
             appPassword: "app-password"
@@ -267,7 +269,9 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(account.email, "user@gmail.com")
         XCTAssertEqual(account.imapServer, "imap.gmail.com")
         XCTAssertEqual(account.port, 993)
-        XCTAssertEqual(account.password, "app-password")
+        // Password is stored in Keychain, check via getPassword()
+        let password = await account.getPassword()
+        XCTAssertEqual(password, "app-password")
         XCTAssertTrue(account.useSSL)
     }
 
@@ -299,7 +303,8 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(decoded.email, account.email)
         XCTAssertEqual(decoded.imapServer, account.imapServer)
         XCTAssertEqual(decoded.port, account.port)
-        XCTAssertEqual(decoded.password, account.password)
+        // Note: password is not included in Codable (stored in Keychain)
+        XCTAssertEqual(decoded.id, account.id)
     }
 
     func testEmailAccountHashable() {
