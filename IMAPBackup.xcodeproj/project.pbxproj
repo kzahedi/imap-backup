@@ -46,10 +46,19 @@
 		C10000010000000000000007 /* AttachmentServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000007 /* AttachmentServiceTests.swift */; };
 		C10000010000000000000008 /* VerificationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000008 /* VerificationServiceTests.swift */; };
 		C10000010000000000000009 /* RetentionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000009 /* RetentionServiceTests.swift */; };
+		D10000010000000000000001 /* IMAPBackupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000020000000000000001 /* IMAPBackupUITests.swift */; };
+		D10000010000000000000002 /* IMAPBackupUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000020000000000000002 /* IMAPBackupUITestsLaunchTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		C10000030000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B10000090000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B10000060000000000000001;
+			remoteInfo = IMAPBackup;
+		};
+		D10000030000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B10000090000000000000001 /* Project object */;
 			proxyType = 1;
@@ -102,6 +111,9 @@
 		C10000020000000000000008 /* VerificationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationServiceTests.swift; sourceTree = "<group>"; };
 		C10000020000000000000009 /* RetentionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetentionServiceTests.swift; sourceTree = "<group>"; };
 		C10000030000000000000002 /* IMAPBackupTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IMAPBackupTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D10000020000000000000001 /* IMAPBackupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMAPBackupUITests.swift; sourceTree = "<group>"; };
+		D10000020000000000000002 /* IMAPBackupUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMAPBackupUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		D10000030000000000000002 /* IMAPBackupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IMAPBackupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +125,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C10000040000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D10000040000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -137,6 +156,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10000040000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -145,6 +171,7 @@
 			children = (
 				B10000050000000000000002 /* IMAPBackup */,
 				C10000050000000000000001 /* IMAPBackupTests */,
+				D10000050000000000000001 /* IMAPBackupUITests */,
 				B10000050000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -166,6 +193,7 @@
 			children = (
 				B10000030000000000000001 /* IMAPBackup.app */,
 				C10000030000000000000002 /* IMAPBackupTests.xctest */,
+				D10000030000000000000002 /* IMAPBackupUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -269,6 +297,15 @@
 			path = IMAPBackupTests;
 			sourceTree = "<group>";
 		};
+		D10000050000000000000001 /* IMAPBackupUITests */ = {
+			isa = PBXGroup;
+			children = (
+				D10000020000000000000001 /* IMAPBackupUITests.swift */,
+				D10000020000000000000002 /* IMAPBackupUITestsLaunchTests.swift */,
+			);
+			path = IMAPBackupUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -307,6 +344,24 @@
 			productReference = C10000030000000000000002 /* IMAPBackupTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		D10000060000000000000001 /* IMAPBackupUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D10000080000000000000001 /* Build configuration list for PBXNativeTarget "IMAPBackupUITests" */;
+			buildPhases = (
+				D10000070000000000000001 /* Sources */,
+				D10000040000000000000001 /* Frameworks */,
+				D10000040000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D10000060000000000000002 /* PBXTargetDependency */,
+			);
+			name = IMAPBackupUITests;
+			productName = IMAPBackupUITests;
+			productReference = D10000030000000000000002 /* IMAPBackupUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -321,6 +376,10 @@
 						CreatedOnToolsVersion = 15.0;
 					};
 					C10000060000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = B10000060000000000000001;
+					};
+					D10000060000000000000001 = {
 						CreatedOnToolsVersion = 15.0;
 						TestTargetID = B10000060000000000000001;
 					};
@@ -341,6 +400,7 @@
 			targets = (
 				B10000060000000000000001 /* IMAPBackup */,
 				C10000060000000000000001 /* IMAPBackupTests */,
+				D10000060000000000000001 /* IMAPBackupUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -398,6 +458,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10000070000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D10000010000000000000001 /* IMAPBackupUITests.swift in Sources */,
+				D10000010000000000000002 /* IMAPBackupUITestsLaunchTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -405,6 +474,11 @@
 			isa = PBXTargetDependency;
 			target = B10000060000000000000001 /* IMAPBackup */;
 			targetProxy = C10000030000000000000001 /* PBXContainerItemProxy */;
+		};
+		D10000060000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B10000060000000000000001 /* IMAPBackup */;
+			targetProxy = D10000030000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -613,6 +687,40 @@
 			};
 			name = Release;
 		};
+		D100000C0000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kzahedi.MailKeepUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = IMAPBackup;
+			};
+			name = Debug;
+		};
+		D100000C0000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kzahedi.MailKeepUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = IMAPBackup;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -639,6 +747,15 @@
 			buildConfigurations = (
 				C100000C0000000000000001 /* Debug */,
 				C100000C0000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D10000080000000000000001 /* Build configuration list for PBXNativeTarget "IMAPBackupUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D100000C0000000000000001 /* Debug */,
+				D100000C0000000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
