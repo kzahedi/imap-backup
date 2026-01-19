@@ -62,8 +62,8 @@ A native macOS menubar app for backing up emails from IMAP servers. Keep your em
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/kzahedi/imap-backup.git
-   cd imap-backup
+   git clone https://github.com/kzahedi/mailkeep.git
+   cd mailkeep
    ```
 
 2. Build with Xcode:
