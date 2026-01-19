@@ -40,15 +40,15 @@
 
 ## Testing
 
-- [ ] **Unit Tests** - Add tests for IMAP parsing, storage, and database
+- [x] **Unit Tests** - 181 tests covering models, services, parsing, storage, database
 - [ ] **Integration Tests** - Test with real IMAP servers
 - [ ] **UI Tests** - Automated UI testing
 
 ## Documentation
 
 - [ ] **Screenshots** - Add screenshots to README
-- [ ] **User Guide** - Detailed usage documentation
-- [ ] **Contributing Guide** - Guidelines for contributors
+- [x] **User Guide** - Detailed usage documentation in README
+- [x] **Contributing Guide** - Guidelines for contributors
 
 ---
 

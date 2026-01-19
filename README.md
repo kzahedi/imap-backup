@@ -8,18 +8,41 @@ A native macOS menubar app for backing up emails from IMAP servers. Supports Gma
 
 ## Features
 
+### Core Backup Features
 - **Multi-account support** - Gmail, IONOS, and custom IMAP servers
 - **Full mailbox sync** - Downloads all emails, not just unread
 - **Incremental backups** - Only downloads new emails on subsequent runs
-- **Scheduled backups** - Manual, hourly, daily, or weekly with custom time selection
-- **iCloud Drive sync** - Automatically sync backups across your Mac devices
-- **Menubar app** - Quick access to backup status and controls
-- **Real-time progress** - See download progress, speed, and ETA per account
-- **Statistics dashboard** - View total emails, storage size, and folder counts
+- **Parallel downloads** - Download multiple emails concurrently for speed
 - **Folder hierarchy preservation** - Mirrors your email folder structure
 - **Human-readable filenames** - `YYYYMMDD_HHMMSS_sender.eml` format
 - **Complete .eml files** - Full RFC 5322 emails with embedded attachments
 - **International character support** - Proper RFC 2047 MIME decoding for subjects
+
+### Scheduling & Automation
+- **Scheduled backups** - Manual, hourly, daily, or weekly with custom time selection
+- **Launch at login** - Start automatically when your Mac starts
+- **Menubar app** - Quick access to backup status and controls
+- **System notifications** - Get notified when backups complete or fail
+
+### Storage & Management
+- **iCloud Drive sync** - Automatically sync backups across your Mac devices
+- **Attachment extraction** - Extract attachments to separate folders for easy access
+- **Retention policies** - Auto-delete old backups by age or count
+- **Backup verification** - Verify backed up emails match server state
+- **Large attachment streaming** - Stream large files to disk instead of loading to memory
+
+### Reliability & Performance
+- **Connection recovery** - Automatically reconnect on network failures
+- **Rate limiting** - Respect server limits with configurable throttling
+- **Retry with backoff** - Automatic retry on failures with exponential backoff
+- **Detailed error logging** - Debug issues with comprehensive logs
+
+### User Interface
+- **Real-time progress** - See download progress, speed, and ETA per account
+- **Statistics dashboard** - View total emails, storage size, and folder counts
+- **Backup history** - View past backups with details and errors
+- **Full-text search** - Search across all downloaded emails by sender, subject, or body
+- **Dock icon toggle** - Run as menubar-only app
 
 ## Requirements
 
@@ -92,6 +115,89 @@ Use your regular IONOS email password with server `imap.ionos.de` on port 993 (S
 - **iCloud Drive**: Sync backups across all your Macs automatically
 - **Custom Location**: Choose any folder via Settings → General
 
+## Advanced Features
+
+### Search Emails
+
+Search across all backed up emails with full-text search:
+
+1. Press **⌘F** or click **Search** in the toolbar
+2. Enter your search query
+3. Results show matching emails with highlighted snippets
+4. Double-click to open the email file in your default email client
+
+Search looks through:
+- Sender names and email addresses
+- Email subjects
+- Email body (plain text and HTML)
+- Attachment filenames
+
+### Attachment Extraction
+
+Extract attachments to separate folders for easy access:
+
+1. Go to **Settings → Storage**
+2. Enable **Extract Attachments**
+3. Choose whether to create subfolders per email
+
+Extracted attachments are saved alongside your emails:
+```
+IMAPBackup/
+└── user@example.com/
+    └── INBOX/
+        ├── 20240115_143022_John_Smith.eml
+        └── attachments/
+            └── 20240115_143022_John_Smith/
+                ├── document.pdf
+                └── image.png
+```
+
+### Retention Policies
+
+Automatically manage backup storage:
+
+1. Go to **Settings → Storage**
+2. Choose a retention policy:
+   - **Keep All**: Never delete backups (default)
+   - **By Age**: Delete backups older than X days
+   - **By Count**: Keep only the most recent X emails per folder
+
+### Backup Verification
+
+Verify your backups match the server:
+
+1. Select an account
+2. Click **Verify Backup** in the toolbar
+3. View results showing:
+   - Emails synced correctly
+   - Emails missing locally
+   - Emails deleted on server
+
+### Rate Limiting
+
+Prevent server throttling with configurable rate limits:
+
+1. Go to **Settings → Advanced**
+2. Choose a preset:
+   - **Balanced**: 100ms delay, 5 concurrent (default)
+   - **Conservative**: 500ms delay, 2 concurrent (for strict servers)
+   - **Aggressive**: 50ms delay, 10 concurrent (for fast servers)
+3. Or set custom values
+
+The app automatically detects throttling and backs off exponentially.
+
+### Error Logging
+
+Debug issues with detailed logs:
+
+1. Go to **Settings → Advanced**
+2. View logs location: `~/Library/Logs/IMAPBackup/`
+3. Logs include:
+   - Connection attempts and failures
+   - Download progress and errors
+   - Throttling events
+   - Recovery attempts
+
 ## Backup Structure
 
 ```
@@ -127,20 +233,26 @@ You can open `.eml` files directly in Apple Mail or any email client.
 
 ```
 IMAPBackup/
-├── App/                    # App entry point, delegate, menubar
+├── App/                        # App entry point, delegate, menubar
 ├── Models/
-│   ├── EmailAccount.swift  # Account configuration
-│   ├── BackupState.swift   # Progress tracking
-│   └── Email.swift         # Email metadata
+│   ├── EmailAccount.swift      # Account configuration (Keychain storage)
+│   ├── BackupState.swift       # Progress tracking
+│   └── Email.swift             # Email metadata
 ├── Services/
-│   ├── BackupManager.swift # Backup coordination, scheduling
-│   ├── IMAPService.swift   # IMAP protocol implementation
-│   ├── StorageService.swift# File system operations
-│   └── EmailParser.swift   # RFC 2047/5322 parsing
+│   ├── BackupManager.swift     # Backup coordination, scheduling
+│   ├── IMAPService.swift       # IMAP protocol implementation
+│   ├── StorageService.swift    # File system operations
+│   ├── EmailParser.swift       # RFC 2047/5322 parsing
+│   ├── SearchService.swift     # Full-text email search
+│   ├── AttachmentService.swift # MIME attachment extraction
+│   ├── RetentionService.swift  # Backup retention policies
+│   ├── VerificationService.swift # Backup verification
+│   ├── RateLimitService.swift  # Throttling and rate limiting
+│   └── LoggingService.swift    # Error and debug logging
 └── Views/
-    ├── MainWindow/         # Account list, details, settings
-    ├── MenubarView.swift   # Menubar dropdown
-    └── Components/         # Reusable UI components
+    ├── MainWindow/             # Account list, details, settings
+    ├── MenubarView.swift       # Menubar dropdown
+    └── Components/             # Reusable UI components
 ```
 
 ### Key Technologies
@@ -157,12 +269,48 @@ IMAPBackup/
 - **Gmail**: Make sure you're using an App Password, not your regular password
 - **IONOS**: Try both `imap.ionos.de` and `imap.1und1.de`
 - Verify your password doesn't have trailing spaces
+- Check if your account has 2FA enabled (requires app password)
 
 ### Connection Issues
 
 - Check your firewall allows outbound connections on port 993
 - Verify the IMAP server address is correct
 - Ensure SSL is enabled for port 993
+- Try the "Test Connection" button to diagnose issues
+
+### Server Throttling
+
+If backups are slow or failing with "too many connections":
+
+1. Go to **Settings → Advanced**
+2. Switch to **Conservative** rate limiting preset
+3. Or reduce concurrent connections to 2
+
+### Large Mailboxes
+
+For accounts with 50,000+ emails:
+
+- Initial backup may take several hours
+- Enable **Conservative** rate limiting to avoid throttling
+- Use **iCloud Drive** storage for automatic sync across devices
+- Check logs at `~/Library/Logs/IMAPBackup/` if issues occur
+
+### Disk Space
+
+If running low on storage:
+
+1. Enable **Retention Policies** in Settings → Storage
+2. Set **By Age** to delete backups older than 90 days
+3. Or use **By Count** to keep only recent emails
+
+### Finding Log Files
+
+Debug logs are stored at:
+```
+~/Library/Logs/IMAPBackup/backup.log
+```
+
+Open Console.app and filter by "IMAPBackup" to view live logs.
 
 ## Contributing
 
