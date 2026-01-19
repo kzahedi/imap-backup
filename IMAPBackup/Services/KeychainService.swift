@@ -5,7 +5,7 @@ import Security
 actor KeychainService {
     static let shared = KeychainService()
 
-    private let service = "com.kzahedi.IMAPBackup"
+    private let service = "com.kzahedi.MailKeep"
 
     private init() {}
 

@@ -30,3 +30,4 @@ Backups/
 # Secrets (never commit)
 .env
 credentials.json
+.tmp/

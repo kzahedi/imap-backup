@@ -105,12 +105,12 @@ struct EmailAccount: Identifiable, Codable, Hashable {
         guard let tokenString = String(data: data, encoding: .utf8) else {
             throw NSError(domain: "EmailAccount", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode OAuth tokens"])
         }
-        try await KeychainService.shared.savePassword(tokenString, for: id, service: "com.kzahedi.IMAPBackup.oauth")
+        try await KeychainService.shared.savePassword(tokenString, for: id, service: "com.kzahedi.MailKeep.oauth")
     }
 
     /// Get OAuth tokens from Keychain
     func getOAuthTokens() async -> GoogleOAuthTokens? {
-        guard let tokenString = try? await KeychainService.shared.getPassword(for: id, service: "com.kzahedi.IMAPBackup.oauth"),
+        guard let tokenString = try? await KeychainService.shared.getPassword(for: id, service: "com.kzahedi.MailKeep.oauth"),
               let data = tokenString.data(using: .utf8) else {
             return nil
         }
@@ -119,7 +119,7 @@ struct EmailAccount: Identifiable, Codable, Hashable {
 
     /// Delete OAuth tokens from Keychain
     func deleteOAuthTokens() async throws {
-        try await KeychainService.shared.deletePassword(for: id, service: "com.kzahedi.IMAPBackup.oauth")
+        try await KeychainService.shared.deletePassword(for: id, service: "com.kzahedi.MailKeep.oauth")
     }
 
     /// Get a valid access token, refreshing if necessary

@@ -8,6 +8,10 @@ struct AccountRowView: View {
         backupManager.progress[account.id]
     }
 
+    var stats: BackupManager.AccountStats {
+        backupManager.getStats(for: account)
+    }
+
     var body: some View {
         HStack {
             // Status indicator
@@ -15,7 +19,7 @@ struct AccountRowView: View {
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
 
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(account.email)
                     .lineLimit(1)
 
@@ -23,10 +27,14 @@ struct AccountRowView: View {
                     Text(progress.status.rawValue)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                } else if let lastBackup = account.lastBackupDate {
-                    Text(lastBackup, style: .relative)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                } else {
+                    // Show stats: email count and size
+                    HStack(spacing: 8) {
+                        Label("\(stats.totalEmails)", systemImage: "envelope")
+                        Label(formatBytes(stats.totalSize), systemImage: "internaldrive")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
 
@@ -41,6 +49,12 @@ struct AccountRowView: View {
         }
         .padding(.vertical, 4)
         .opacity(account.isEnabled ? 1.0 : 0.5)
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 
     var statusColor: Color {

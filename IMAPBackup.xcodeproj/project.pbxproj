@@ -17,6 +17,7 @@
 		B10000010000000000000008 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000008 /* BackupManager.swift */; };
 		B10000010000000000000009 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000009 /* MainWindowView.swift */; };
 		B1000001000000000000000A /* AccountRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000000A /* AccountRowView.swift */; };
+		B10000010000000000000022 /* MissingPasswordsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000022 /* MissingPasswordsView.swift */; };
 		B1000001000000000000000B /* MenubarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000000B /* MenubarView.swift */; };
 		B1000001000000000000000C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000000C /* SettingsView.swift */; };
 		B1000001000000000000000D /* AddAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000000D /* AddAccountView.swift */; };
@@ -37,6 +38,7 @@
 		B1000001000000000000001E /* AttachmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001E /* AttachmentService.swift */; };
 		B1000001000000000000001F /* VerificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001F /* VerificationService.swift */; };
 		B10000010000000000000020 /* GoogleOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000020 /* GoogleOAuthService.swift */; };
+		B10000010000000000000021 /* MigrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000021 /* MigrationService.swift */; };
 		C10000010000000000000001 /* EmailParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000001 /* EmailParserTests.swift */; };
 		C10000010000000000000002 /* DatabaseServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000002 /* DatabaseServiceTests.swift */; };
 		C10000010000000000000003 /* SearchServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000003 /* SearchServiceTests.swift */; };
@@ -79,6 +81,7 @@
 		B10000020000000000000008 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		B10000020000000000000009 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		B1000002000000000000000A /* AccountRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRowView.swift; sourceTree = "<group>"; };
+		B10000020000000000000022 /* MissingPasswordsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissingPasswordsView.swift; sourceTree = "<group>"; };
 		B1000002000000000000000B /* MenubarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarView.swift; sourceTree = "<group>"; };
 		B1000002000000000000000C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B1000002000000000000000D /* AddAccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountView.swift; sourceTree = "<group>"; };
@@ -101,6 +104,7 @@
 		B1000002000000000000001E /* AttachmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentService.swift; sourceTree = "<group>"; };
 		B1000002000000000000001F /* VerificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationService.swift; sourceTree = "<group>"; };
 		B10000020000000000000020 /* GoogleOAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuthService.swift; sourceTree = "<group>"; };
+		B10000020000000000000021 /* MigrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationService.swift; sourceTree = "<group>"; };
 		B10000030000000000000001 /* IMAPBackup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IMAPBackup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000020000000000000001 /* EmailParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailParserTests.swift; sourceTree = "<group>"; };
 		C10000020000000000000002 /* DatabaseServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseServiceTests.swift; sourceTree = "<group>"; };
@@ -239,6 +243,7 @@
 				B1000002000000000000001E /* AttachmentService.swift */,
 				B1000002000000000000001F /* VerificationService.swift */,
 				B10000020000000000000020 /* GoogleOAuthService.swift */,
+				B10000020000000000000021 /* MigrationService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -279,6 +284,7 @@
 			isa = PBXGroup;
 			children = (
 				B1000002000000000000000A /* AccountRowView.swift */,
+				B10000020000000000000022 /* MissingPasswordsView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -431,6 +437,7 @@
 				B10000010000000000000008 /* BackupManager.swift in Sources */,
 				B10000010000000000000009 /* MainWindowView.swift in Sources */,
 				B1000001000000000000000A /* AccountRowView.swift in Sources */,
+				B10000010000000000000022 /* MissingPasswordsView.swift in Sources */,
 				B1000001000000000000000B /* MenubarView.swift in Sources */,
 				B1000001000000000000000C /* SettingsView.swift in Sources */,
 				B1000001000000000000000D /* AddAccountView.swift in Sources */,
@@ -450,6 +457,7 @@
 				B1000001000000000000001E /* AttachmentService.swift in Sources */,
 				B1000001000000000000001F /* VerificationService.swift in Sources */,
 				B10000010000000000000020 /* GoogleOAuthService.swift in Sources */,
+				B10000010000000000000021 /* MigrationService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

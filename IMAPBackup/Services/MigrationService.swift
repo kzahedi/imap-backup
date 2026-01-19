@@ -1,0 +1,149 @@
+import Foundation
+import Security
+
+/// One-time migration service from IMAPBackup to MailKeep
+/// All methods are synchronous to run before app initialization
+enum MigrationService {
+    private static let migrationCompletedKey = "MigrationFromIMAPBackupCompleted"
+    private static let oldBundleId = "com.kzahedi.IMAPBackup"
+
+    /// Check if migration is needed and perform it (synchronous)
+    static func migrateIfNeeded() {
+        // Skip if already migrated
+        guard !UserDefaults.standard.bool(forKey: migrationCompletedKey) else {
+            return
+        }
+
+        // Read old plist file directly
+        let prefsPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences/\(oldBundleId).plist")
+
+        guard FileManager.default.fileExists(atPath: prefsPath.path),
+              let oldData = NSDictionary(contentsOf: prefsPath) as? [String: Any],
+              oldData["EmailAccounts"] != nil else {
+            // No old data, mark as complete
+            UserDefaults.standard.set(true, forKey: migrationCompletedKey)
+            print("[Migration] No old IMAPBackup data found at \(prefsPath.path), skipping migration")
+            return
+        }
+
+        print("[Migration] Found old IMAPBackup data, starting migration...")
+
+        // Perform migration
+        migrateUserDefaults(from: oldData)
+        migrateKeychainItems()
+
+        // Mark complete
+        UserDefaults.standard.set(true, forKey: migrationCompletedKey)
+        UserDefaults.standard.synchronize()
+
+        print("[Migration] Migration from IMAPBackup to MailKeep completed successfully")
+    }
+
+    // MARK: - UserDefaults Migration
+
+    private static func migrateUserDefaults(from oldData: [String: Any]) {
+        let keysToMigrate = [
+            "EmailAccounts",
+            "BackupLocation",
+            "BackupSchedule",
+            "BackupScheduleTime",
+            "BackupHistory",
+            "LogLevel",
+            "googleOAuthClientId",
+            "StreamingThresholdBytes",
+            "RateLimitSettings",
+            "RateLimitAccountSettings",
+            "AttachmentExtractionSettings",
+            "RetentionSettings"
+        ]
+
+        var migratedCount = 0
+        for key in keysToMigrate {
+            if let value = oldData[key] {
+                UserDefaults.standard.set(value, forKey: key)
+                migratedCount += 1
+                print("[Migration] Migrated UserDefaults key: \(key)")
+            }
+        }
+
+        UserDefaults.standard.synchronize()
+        print("[Migration] Migrated \(migratedCount) UserDefaults keys")
+    }
+
+    // MARK: - Keychain Migration
+
+    private static func migrateKeychainItems() {
+        // Migrate password items
+        let passwordCount = migrateKeychainService(
+            from: "com.kzahedi.IMAPBackup",
+            to: "com.kzahedi.MailKeep"
+        )
+        print("[Migration] Migrated \(passwordCount) password items from Keychain")
+
+        // Migrate OAuth token items
+        let oauthCount = migrateKeychainService(
+            from: "com.kzahedi.IMAPBackup.oauth",
+            to: "com.kzahedi.MailKeep.oauth"
+        )
+        print("[Migration] Migrated \(oauthCount) OAuth token items from Keychain")
+    }
+
+    private static func migrateKeychainService(from oldService: String, to newService: String) -> Int {
+        // Query all items from old service
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: oldService,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess,
+              let items = result as? [[String: Any]] else {
+            return 0
+        }
+
+        var migratedCount = 0
+
+        // Copy each item to new service
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  let data = item[kSecValueData as String] as? Data else {
+                continue
+            }
+
+            // Check if already exists in new service
+            let checkQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: newService,
+                kSecAttrAccount as String: account
+            ]
+
+            let checkStatus = SecItemCopyMatching(checkQuery as CFDictionary, nil)
+            if checkStatus == errSecSuccess {
+                // Already exists, skip
+                continue
+            }
+
+            // Add to new service
+            let addQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: newService,
+                kSecAttrAccount as String: account,
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
+            ]
+
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            if addStatus == errSecSuccess {
+                migratedCount += 1
+            }
+        }
+
+        return migratedCount
+    }
+}

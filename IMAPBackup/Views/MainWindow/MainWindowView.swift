@@ -5,6 +5,7 @@ struct MainWindowView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var selectedAccount: EmailAccount?
     @State private var showingAddAccount = false
+    @State private var showingMissingPasswords = false
 
     var body: some View {
         NavigationSplitView {
@@ -16,10 +17,11 @@ struct MainWindowView: View {
                             .tag(account)
                     }
                     .onDelete(perform: deleteAccounts)
+                    .onMove(perform: moveAccounts)
                 }
             }
             .listStyle(.sidebar)
-            .frame(minWidth: 200)
+            .frame(minWidth: 220)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: { showingAddAccount = true }) {
@@ -45,6 +47,23 @@ struct MainWindowView: View {
         }
         .sheet(isPresented: $showingAddAccount) {
             AddAccountView()
+        }
+        .sheet(isPresented: $showingMissingPasswords) {
+            MissingPasswordsView()
+        }
+        .onAppear {
+            // Show missing passwords prompt if needed
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if !backupManager.accountsWithMissingPasswords.isEmpty {
+                    showingMissingPasswords = true
+                }
+            }
+        }
+        .onChange(of: backupManager.accountsWithMissingPasswords) { _, newValue in
+            // Auto-show when missing passwords detected
+            if !newValue.isEmpty && !showingMissingPasswords {
+                showingMissingPasswords = true
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -76,6 +95,10 @@ struct MainWindowView: View {
         for index in offsets {
             backupManager.removeAccount(backupManager.accounts[index])
         }
+    }
+
+    private func moveAccounts(from source: IndexSet, to destination: Int) {
+        backupManager.moveAccounts(from: source, to: destination)
     }
 }
 

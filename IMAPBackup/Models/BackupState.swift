@@ -56,7 +56,8 @@ enum BackupStatus: String, Codable {
     case idle = "Idle"
     case connecting = "Connecting..."
     case fetchingFolders = "Fetching folders..."
-    case scanning = "Scanning emails..."
+    case counting = "Counting emails..."
+    case scanning = "Scanning folder..."
     case downloading = "Downloading..."
     case completed = "Completed"
     case failed = "Failed"
@@ -64,7 +65,7 @@ enum BackupStatus: String, Codable {
 
     var isActive: Bool {
         switch self {
-        case .connecting, .fetchingFolders, .scanning, .downloading:
+        case .connecting, .fetchingFolders, .counting, .scanning, .downloading:
             return true
         default:
             return false

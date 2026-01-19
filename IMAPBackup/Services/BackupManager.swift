@@ -40,6 +40,9 @@ class BackupManager: ObservableObject {
     /// Default: 10 MB
     @Published var streamingThresholdBytes: Int = 10 * 1024 * 1024
 
+    /// Accounts that are missing passwords (e.g., after migration)
+    @Published var accountsWithMissingPasswords: [EmailAccount] = []
+
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
     private var activeHistoryIds: [UUID: UUID] = [:]  // Account ID -> History Entry ID
     private var scheduleTimer: Timer?
@@ -83,6 +86,31 @@ class BackupManager: ObservableObject {
 
         // Start scheduler if needed
         updateScheduler()
+
+        // Check for accounts missing passwords (e.g., after migration)
+        checkForMissingPasswords()
+    }
+
+    // MARK: - Password Management
+
+    /// Check all accounts for missing passwords
+    func checkForMissingPasswords() {
+        Task {
+            var missing: [EmailAccount] = []
+            for account in accounts {
+                // Only check password-based accounts, not OAuth
+                guard account.authType == .password else { continue }
+
+                let hasPassword = await KeychainService.shared.hasPassword(for: account.id)
+                if !hasPassword {
+                    missing.append(account)
+                }
+            }
+
+            await MainActor.run {
+                self.accountsWithMissingPasswords = missing
+            }
+        }
     }
 
     // MARK: - Account Management
@@ -118,6 +146,11 @@ class BackupManager: ObservableObject {
                 }
             }
         }
+    }
+
+    func moveAccounts(from source: IndexSet, to destination: Int) {
+        accounts.move(fromOffsets: source, toOffset: destination)
+        saveAccounts()
     }
 
     private func loadAccounts() {
@@ -371,8 +404,40 @@ class BackupManager: ObservableObject {
                 $0.totalFolders = selectableFolders.count
             }
 
-            // Process each folder
+            // Phase 1: Count all emails that need to be downloaded
+            updateProgress(for: account.id) { $0.status = .counting }
+            var folderNewUIDs: [(IMAPFolder, [UInt32])] = []
+            var totalNewEmails = 0
+
             for (index, folder) in selectableFolders.enumerated() {
+                guard !Task.isCancelled else { break }
+
+                updateProgress(for: account.id) {
+                    $0.currentFolder = folder.name
+                }
+
+                let newUIDs = try await countNewEmails(
+                    in: folder,
+                    account: account,
+                    imapService: imapService,
+                    storageService: storageService
+                )
+
+                if !newUIDs.isEmpty {
+                    folderNewUIDs.append((folder, newUIDs))
+                    totalNewEmails += newUIDs.count
+                }
+            }
+
+            // Set total count before downloading
+            updateProgress(for: account.id) {
+                $0.totalEmails = totalNewEmails
+            }
+
+            logInfo("Found \(totalNewEmails) new emails to download across \(folderNewUIDs.count) folders")
+
+            // Phase 2: Download emails from each folder
+            for (index, (folder, newUIDs)) in folderNewUIDs.enumerated() {
                 guard !Task.isCancelled else { break }
 
                 updateProgress(for: account.id) {
@@ -380,8 +445,9 @@ class BackupManager: ObservableObject {
                     $0.processedFolders = index
                 }
 
-                try await backupFolder(
-                    folder: folder,
+                try await downloadEmails(
+                    uids: newUIDs,
+                    from: folder,
                     account: account,
                     imapService: imapService,
                     storageService: storageService
@@ -391,7 +457,7 @@ class BackupManager: ObservableObject {
             // Complete
             updateProgress(for: account.id) {
                 $0.status = .completed
-                $0.processedFolders = selectableFolders.count
+                $0.processedFolders = folderNewUIDs.count
             }
 
             // Update last backup date
@@ -456,40 +522,47 @@ class BackupManager: ObservableObject {
         checkAllBackupsComplete()
     }
 
-    private func backupFolder(
-        folder: IMAPFolder,
+    /// Phase 1: Count new emails in a folder without downloading
+    private func countNewEmails(
+        in folder: IMAPFolder,
         account: EmailAccount,
         imapService: IMAPService,
         storageService: StorageService
-    ) async throws {
+    ) async throws -> [UInt32] {
         // Select folder
         let status = try await imapService.selectFolder(folder.name)
 
-        guard status.exists > 0 else { return }
+        guard status.exists > 0 else { return [] }
 
         // Search for all emails
-        updateProgress(for: account.id) { $0.status = .scanning }
         let allUIDs = try await imapService.searchAll()
 
-        // Get already backed up UIDs by scanning existing files (no database needed)
+        // Get already backed up UIDs by scanning existing files
         let backedUpUIDs = (try? await storageService.getExistingUIDs(
             accountEmail: account.email,
             folderPath: folder.path
         )) ?? []
 
-        // Filter to only new emails
-        let newUIDs = allUIDs.filter { !backedUpUIDs.contains($0) }
+        // Return only new UIDs
+        return allUIDs.filter { !backedUpUIDs.contains($0) }
+    }
 
-        updateProgress(for: account.id) {
-            $0.totalEmails += newUIDs.count
-        }
+    /// Phase 2: Download emails with pre-calculated UIDs
+    private func downloadEmails(
+        uids: [UInt32],
+        from folder: IMAPFolder,
+        account: EmailAccount,
+        imapService: IMAPService,
+        storageService: StorageService
+    ) async throws {
+        guard !uids.isEmpty else { return }
 
-        guard !newUIDs.isEmpty else { return }
+        // Re-select folder (may have been deselected during counting phase)
+        _ = try await imapService.selectFolder(folder.name)
 
-        // Download each new email with retry logic
         updateProgress(for: account.id) { $0.status = .downloading }
 
-        for uid in newUIDs {
+        for uid in uids {
             guard !Task.isCancelled else { break }
 
             // Retry with exponential backoff (max 3 attempts)
