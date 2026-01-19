@@ -4,7 +4,7 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // App initialization
-        print("IMAP Backup started")
+        print("MailKeep started")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -27,7 +27,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // If search window doesn't exist, open it via the scene
-        if let url = URL(string: "imapbackup://search") {
+        if let url = URL(string: "mailkeep://search") {
             NSWorkspace.shared.open(url)
         }
     }

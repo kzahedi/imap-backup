@@ -115,7 +115,7 @@ struct GeneralSettingsView: View {
 
             Section("Startup") {
                 Toggle("Start at login", isOn: $launchService.isEnabled)
-                    .help("Automatically launch IMAP Backup when you log in")
+                    .help("Automatically launch MailKeep when you log in")
 
                 Toggle("Hide dock icon", isOn: $hideDockIcon)
                     .help("Run as menubar-only app (requires restart)")
@@ -1059,7 +1059,7 @@ struct OAuthSetupHelpView: View {
 
                         Text("Step 4: Create OAuth Credentials")
                             .font(.subheadline.bold())
-                        Text("Go to 'Credentials' → 'Create Credentials' → 'OAuth client ID'. Select 'macOS' as the application type. Use 'com.kzahedi.IMAPBackup' as the bundle ID.")
+                        Text("Go to 'Credentials' → 'Create Credentials' → 'OAuth client ID'. Select 'macOS' as the application type. Use 'com.kzahedi.MailKeep' as the bundle ID.")
 
                         Text("Step 5: Copy the Client ID")
                             .font(.subheadline.bold())

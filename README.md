@@ -1,6 +1,6 @@
-# IMAP Backup
+# MailKeep
 
-A native macOS menubar app for backing up emails from IMAP servers. Supports Gmail (via App Passwords), IONOS, and custom IMAP servers.
+A native macOS menubar app for backing up emails from IMAP servers. Keep your emails safe with MailKeep. Supports Gmail (via App Passwords), IONOS, and custom IMAP servers.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9+-orange)
@@ -73,7 +73,7 @@ A native macOS menubar app for backing up emails from IMAP servers. Supports Gma
 
 3. Copy to Applications:
    ```bash
-   cp -R ~/Library/Developer/Xcode/DerivedData/IMAPBackup-*/Build/Products/Release/IMAPBackup.app ~/Applications/
+   cp -R ~/Library/Developer/Xcode/DerivedData/IMAPBackup-*/Build/Products/Release/MailKeep.app ~/Applications/
    ```
 
 Or open `IMAPBackup.xcodeproj` in Xcode and build with ⌘R.
@@ -95,7 +95,7 @@ Gmail requires an App Password instead of your regular password:
 1. Enable 2-Factor Authentication on your Google account
 2. Go to [Google App Passwords](https://myaccount.google.com/apppasswords)
 3. Generate a new app password for "Mail"
-4. Use this 16-character password in IMAP Backup
+4. Use this 16-character password in MailKeep
 
 ### IONOS Setup
 
@@ -317,7 +317,7 @@ Debug logs are stored at:
 ~/Library/Logs/IMAPBackup/backup.log
 ```
 
-Open Console.app and filter by "IMAPBackup" to view live logs.
+Open Console.app and filter by "MailKeep" to view live logs.
 
 ## Contributing
 

@@ -12,7 +12,7 @@ struct MenubarView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
-                Text("IMAP Backup")
+                Text("MailKeep")
                     .font(.headline)
                 Spacer()
                 if backupManager.isBackingUp {
@@ -138,7 +138,7 @@ struct MenubarView: View {
                 NSApp.activate(ignoringOtherApps: true)
                 // Open main window
                 for window in NSApp.windows {
-                    if window.title.isEmpty || window.title == "IMAP Backup" {
+                    if window.title.isEmpty || window.title == "MailKeep" {
                         window.makeKeyAndOrderFront(nil)
                         break
                     }
