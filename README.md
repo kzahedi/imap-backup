@@ -6,7 +6,12 @@ A native macOS menubar app for backing up emails from IMAP servers. Supports Gma
 ![Swift](https://img.shields.io/badge/Swift-5.9+-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-![IMAP Backup Main Window](docs/screenshots/main-window.png)
+## Screenshots
+
+| Main Window | Menubar |
+|:-----------:|:-------:|
+| ![Main Window](docs/screenshots/backup-progress.png) | ![Menubar](docs/screenshots/menubar-popup.png) |
+| Real-time backup progress with download speed, ETA, and folder statistics | Quick access from menubar showing all accounts and backup status |
 
 ## Features
 
