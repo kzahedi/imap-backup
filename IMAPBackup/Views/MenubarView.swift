@@ -135,9 +135,6 @@ struct MenubarView: View {
             Divider()
 
             Button(action: {
-                if let url = URL(string: "imapbackup://main") {
-                    NSWorkspace.shared.open(url)
-                }
                 NSApp.activate(ignoringOtherApps: true)
                 // Open main window
                 for window in NSApp.windows {
