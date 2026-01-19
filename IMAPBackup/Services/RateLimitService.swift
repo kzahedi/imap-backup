@@ -136,8 +136,9 @@ class RateLimitService: ObservableObject {
         didSet { saveSettings() }
     }
 
-    /// Active throttle trackers for each account
-    private var throttleTrackers: [UUID: ThrottleTracker] = [:]
+    /// Active throttle trackers keyed by server hostname
+    /// Multiple accounts on the same server share the same tracker
+    private var serverTrackers: [String: ThrottleTracker] = [:]
 
     private let settingsKey = "RateLimitSettings"
     private let accountSettingsKey = "RateLimitAccountSettings"
@@ -182,7 +183,6 @@ class RateLimitService: ObservableObject {
     /// Remove account-specific settings (use global)
     func removeSettings(for accountId: UUID) {
         accountSettings.removeValue(forKey: accountId)
-        throttleTrackers.removeValue(forKey: accountId)
     }
 
     /// Check if account has custom settings
@@ -190,30 +190,48 @@ class RateLimitService: ObservableObject {
         return accountSettings[accountId] != nil
     }
 
-    // MARK: - Throttle Tracking
+    // MARK: - Throttle Tracking (Per-Server)
 
-    /// Get or create throttle tracker for an account
-    func getTracker(for accountId: UUID) -> ThrottleTracker {
-        if let tracker = throttleTrackers[accountId] {
+    /// Get or create throttle tracker for a server
+    /// Multiple accounts on the same server share the same tracker
+    func getTracker(forServer server: String, accountId: UUID) -> ThrottleTracker {
+        let serverKey = server.lowercased()
+
+        if let tracker = serverTrackers[serverKey] {
             return tracker
         }
 
+        // Use account settings for initial configuration, fall back to global
         let settings = getSettings(for: accountId)
         let tracker = ThrottleTracker(settings: settings)
-        throttleTrackers[accountId] = tracker
+        serverTrackers[serverKey] = tracker
         return tracker
     }
 
-    /// Reset throttle state for an account
-    func resetThrottle(for accountId: UUID) async {
-        await throttleTrackers[accountId]?.reset()
+    /// Legacy method for backward compatibility - uses global settings
+    func getTracker(for accountId: UUID) -> ThrottleTracker {
+        // This should not be used anymore, but keep for compatibility
+        let settings = getSettings(for: accountId)
+        return ThrottleTracker(settings: settings)
+    }
+
+    /// Reset throttle state for a server
+    func resetThrottle(forServer server: String) async {
+        let serverKey = server.lowercased()
+        await serverTrackers[serverKey]?.reset()
     }
 
     /// Reset all throttle states
     func resetAllThrottles() async {
-        for tracker in throttleTrackers.values {
+        for tracker in serverTrackers.values {
             await tracker.reset()
         }
+    }
+
+    /// Get current delay for a server (for logging/display)
+    func getCurrentDelay(forServer server: String) async -> Int? {
+        let serverKey = server.lowercased()
+        return await serverTrackers[serverKey]?.getCurrentDelay()
     }
 
     // MARK: - Throttle Detection

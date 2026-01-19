@@ -87,12 +87,14 @@ class BackupManager: ObservableObject {
 
     // MARK: - Account Management
 
-    func addAccount(_ account: EmailAccount, password: String) {
+    func addAccount(_ account: EmailAccount, password: String?) {
         accounts.append(account)
         saveAccounts()
-        // Save password to Keychain
-        Task {
-            try? await KeychainService.shared.savePassword(password, for: account.id)
+        // Save password to Keychain (only for non-OAuth accounts)
+        if let password = password {
+            Task {
+                try? await KeychainService.shared.savePassword(password, for: account.id)
+            }
         }
     }
 
@@ -342,10 +344,12 @@ class BackupManager: ObservableObject {
         let imapService = IMAPService(account: account)
         let storageService = StorageService(baseURL: backupLocation)
 
-        // Configure rate limiting
-        let rateLimitSettings = RateLimitService.shared.getSettings(for: account.id)
-        await imapService.configureRateLimit(settings: rateLimitSettings)
-        logDebug("Rate limiting configured: \(rateLimitSettings.requestDelayMs)ms delay, enabled: \(rateLimitSettings.isEnabled)")
+        // Configure rate limiting with shared server tracker
+        // Accounts on the same server share the same throttle tracker
+        let rateLimitSettings = await RateLimitService.shared.getSettings(for: account.id)
+        let sharedTracker = await RateLimitService.shared.getTracker(forServer: account.imapServer, accountId: account.id)
+        await imapService.configureRateLimit(settings: rateLimitSettings, sharedTracker: sharedTracker)
+        logDebug("Rate limiting configured: \(rateLimitSettings.requestDelayMs)ms delay, enabled: \(rateLimitSettings.isEnabled), server: \(account.imapServer)")
 
         // Start history entry
         let historyId = BackupHistoryService.shared.startEntry(for: account.email)
@@ -548,10 +552,16 @@ class BackupManager: ObservableObject {
                         let emailData = try await imapService.fetchEmail(uid: uid)
                         bytesDownloaded = Int64(emailData.count)
 
-                        // Verify download - check for valid email structure
-                        guard emailData.count > 0,
-                              let content = String(data: emailData, encoding: .utf8) ?? String(data: emailData, encoding: .ascii),
-                              content.contains("From:") || content.contains("Date:") || content.contains("Subject:") else {
+                        // Verify download - check for valid email structure (only check first 4KB for headers)
+                        // Binary attachments may prevent full string conversion, so only check header portion
+                        let headerCheckData = emailData.prefix(4096)
+                        let content = String(data: headerCheckData, encoding: .utf8) ?? String(data: headerCheckData, encoding: .ascii)
+                        let hasValidHeaders = content != nil && (content!.contains("From:") || content!.contains("Date:") || content!.contains("Subject:"))
+
+                        guard emailData.count > 0, hasValidHeaders else {
+                            // Log what we received for debugging
+                            let preview = content?.prefix(200) ?? "(nil or not decodable)"
+                            logError("Invalid email data for UID \(uid): size=\(emailData.count) bytes, preview: \(preview)")
                             throw BackupManagerError.invalidEmailData
                         }
 

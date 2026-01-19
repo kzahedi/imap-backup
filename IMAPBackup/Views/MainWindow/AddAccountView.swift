@@ -1,51 +1,10 @@
 import SwiftUI
-import AppKit
-
-// NSSecureTextField wrapper for proper password manager support
-struct PasswordField: NSViewRepresentable {
-    let placeholder: String
-    @Binding var text: String
-
-    func makeNSView(context: Context) -> NSSecureTextField {
-        let textField = NSSecureTextField()
-        textField.placeholderString = placeholder
-        textField.delegate = context.coordinator
-        textField.contentType = .password
-        textField.bezelStyle = .roundedBezel
-        textField.focusRingType = .exterior
-        return textField
-    }
-
-    func updateNSView(_ nsView: NSSecureTextField, context: Context) {
-        if nsView.stringValue != text {
-            nsView.stringValue = text
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: PasswordField
-
-        init(_ parent: PasswordField) {
-            self.parent = parent
-        }
-
-        func controlTextDidChange(_ obj: Notification) {
-            if let textField = obj.object as? NSTextField {
-                parent.text = textField.stringValue
-            }
-        }
-    }
-}
 
 struct AddAccountView: View {
     @EnvironmentObject var backupManager: BackupManager
     @Environment(\.dismiss) private var dismiss
 
-    @State private var accountType: AccountType = .gmail
+    @State private var accountType: AccountType = .gmailOAuth
     @State private var email = ""
     @State private var password = ""
     @State private var imapServer = "imap.gmail.com"  // Default for Gmail
@@ -53,10 +12,15 @@ struct AddAccountView: View {
     @State private var useSSL = true
 
     @State private var isTesting = false
+    @State private var isSigningIn = false
     @State private var testResult: TestResult?
 
+    // OAuth state
+    @State private var oauthTokens: GoogleOAuthTokens?
+
     enum AccountType: String, CaseIterable {
-        case gmail = "Gmail"
+        case gmailOAuth = "Gmail (Recommended)"
+        case gmailAppPassword = "Gmail (App Password)"
         case ionos = "IONOS"
         case custom = "Custom IMAP"
     }
@@ -91,8 +55,13 @@ struct AddAccountView: View {
                     }
                 }
                 .onChange(of: accountType) { _, newValue in
+                    // Reset OAuth state when changing account type
+                    oauthTokens = nil
+                    email = ""
+                    testResult = nil
+
                     switch newValue {
-                    case .gmail:
+                    case .gmailOAuth, .gmailAppPassword:
                         imapServer = "imap.gmail.com"
                         port = "993"
                         useSSL = true
@@ -107,17 +76,72 @@ struct AddAccountView: View {
                     }
                 }
 
-                // Email
-                TextField("Email Address", text: $email)
-                    .textContentType(.emailAddress)
+                // Gmail OAuth flow
+                if accountType == .gmailOAuth {
+                    if oauthTokens != nil && !email.isEmpty {
+                        // Successfully signed in
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Signed in as \(email)")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Button("Change Account") {
+                                oauthTokens = nil
+                                email = ""
+                                testResult = nil
+                            }
+                            .buttonStyle(.link)
+                        }
+                    } else {
+                        // Show sign in button
+                        VStack(alignment: .leading, spacing: 12) {
+                            Button(action: signInWithGoogle) {
+                                HStack {
+                                    Image(systemName: "g.circle.fill")
+                                        .font(.title2)
+                                    Text("Sign in with Google")
+                                        .fontWeight(.medium)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
+                            .disabled(isSigningIn || !GoogleOAuthService.shared.isConfigured)
 
-                // Password
-                LabeledContent(accountType == .gmail ? "App Password" : "Password") {
-                    PasswordField(
-                        placeholder: accountType == .gmail ? "App Password" : "Password",
-                        text: $password
-                    )
-                    .frame(height: 22)
+                            if isSigningIn {
+                                HStack {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                    Text("Signing in...")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            if !GoogleOAuthService.shared.isConfigured {
+                                Text("OAuth not configured. Please set up Google Cloud credentials in Settings → Advanced.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            } else {
+                                Text("Sign in securely with your Google account. No app password needed.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                // Email field for non-OAuth types
+                if accountType != .gmailOAuth {
+                    TextField("Email Address", text: $email)
+                        .textContentType(.emailAddress)
+                }
+
+                // Password for non-OAuth types
+                if accountType == .gmailAppPassword || accountType == .ionos || accountType == .custom {
+                    SecureField(accountType == .gmailAppPassword ? "App Password" : "Password", text: $password)
                 }
 
                 // Server settings for custom
@@ -127,8 +151,8 @@ struct AddAccountView: View {
                     Toggle("Use SSL/TLS", isOn: $useSSL)
                 }
 
-                // Help text for Gmail
-                if accountType == .gmail {
+                // Help text for Gmail App Password
+                if accountType == .gmailAppPassword {
                     Text("Use an App Password, not your regular password.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -166,14 +190,16 @@ struct AddAccountView: View {
 
             // Actions
             HStack {
-                Button("Test Connection") {
-                    testConnection()
-                }
-                .disabled(isTesting || !isFormValid)
+                if accountType != .gmailOAuth || oauthTokens != nil {
+                    Button("Test Connection") {
+                        testConnection()
+                    }
+                    .disabled(isTesting || !isFormValid)
 
-                if isTesting {
-                    ProgressView()
-                        .scaleEffect(0.7)
+                    if isTesting {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
                 }
 
                 Spacer()
@@ -186,22 +212,58 @@ struct AddAccountView: View {
             }
             .padding()
         }
-        .frame(width: 450, height: 400)
+        .frame(width: 450, height: accountType == .gmailOAuth ? 350 : 400)
     }
 
     var isFormValid: Bool {
-        !email.isEmpty && !password.isEmpty && !imapServer.isEmpty && !port.isEmpty
+        switch accountType {
+        case .gmailOAuth:
+            return oauthTokens != nil && !email.isEmpty
+        case .gmailAppPassword, .ionos, .custom:
+            return !email.isEmpty && !password.isEmpty && !imapServer.isEmpty && !port.isEmpty
+        }
+    }
+
+    func signInWithGoogle() {
+        isSigningIn = true
+        testResult = nil
+
+        Task {
+            do {
+                // Start OAuth flow
+                let tokens = try await GoogleOAuthService.shared.authorize()
+
+                // Get user email
+                let userEmail = try await GoogleOAuthService.shared.getUserEmail(accessToken: tokens.accessToken)
+
+                await MainActor.run {
+                    self.oauthTokens = tokens
+                    self.email = userEmail
+                    self.isSigningIn = false
+                    self.testResult = .success
+                }
+            } catch {
+                await MainActor.run {
+                    self.isSigningIn = false
+                    if case GoogleOAuthError.userCancelled = error {
+                        // User cancelled, don't show error
+                    } else {
+                        self.testResult = .failure(error.localizedDescription)
+                    }
+                }
+            }
+        }
     }
 
     func testConnection() {
         isTesting = true
         testResult = nil
 
-        let account = createAccount()
-
         Task {
-            let service = IMAPService(account: account)
             do {
+                let account = try await createAccount()
+                let service = IMAPService(account: account)
+
                 try await service.connect()
                 try await service.login()
                 try await service.logout()
@@ -220,19 +282,54 @@ struct AddAccountView: View {
     }
 
     func addAccount() {
-        let account = createAccount()
-        backupManager.addAccount(account, password: password)
-        dismiss()
+        Task {
+            do {
+                let account = try await createAccount()
+
+                if accountType == .gmailOAuth, let tokens = oauthTokens {
+                    // Save OAuth tokens
+                    try await account.saveOAuthTokens(tokens)
+                    await MainActor.run {
+                        backupManager.addAccount(account, password: nil)
+                        dismiss()
+                    }
+                } else {
+                    await MainActor.run {
+                        backupManager.addAccount(account, password: password)
+                        dismiss()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    testResult = .failure("Failed to add account: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
-    func createAccount() -> EmailAccount {
-        EmailAccount(
-            email: email,
-            imapServer: imapServer,
-            port: Int(port) ?? 993,
-            password: password,  // Used temporarily for testing, stored in Keychain
-            useSSL: useSSL
-        )
+    func createAccount() async throws -> EmailAccount {
+        switch accountType {
+        case .gmailOAuth:
+            return EmailAccount.gmailOAuth(email: email)
+        case .gmailAppPassword:
+            return EmailAccount(
+                email: email,
+                imapServer: imapServer,
+                port: Int(port) ?? 993,
+                password: password,
+                useSSL: useSSL,
+                authType: .password
+            )
+        case .ionos, .custom:
+            return EmailAccount(
+                email: email,
+                imapServer: imapServer,
+                port: Int(port) ?? 993,
+                password: password,
+                useSSL: useSSL,
+                authType: .password
+            )
+        }
     }
 }
 

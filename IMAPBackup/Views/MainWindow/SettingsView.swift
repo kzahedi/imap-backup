@@ -37,8 +37,13 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Verify", systemImage: "checkmark.shield")
                 }
+
+            AdvancedSettingsView()
+                .tabItem {
+                    Label("Advanced", systemImage: "gearshape.2")
+                }
         }
-        .frame(width: 500, height: 500)
+        .frame(width: 650, height: 550)
     }
 }
 
@@ -267,20 +272,52 @@ struct ScheduleSettingsView: View {
 struct AccountsSettingsView: View {
     @EnvironmentObject var backupManager: BackupManager
     @State private var showingAddAccount = false
+    @State private var accountToEdit: EmailAccount?
+    @State private var accountToDelete: EmailAccount?
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         VStack {
             List {
                 ForEach(backupManager.accounts) { account in
                     HStack {
-                        VStack(alignment: .leading) {
-                            Text(account.email)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(account.email)
+                                if account.authType == .oauth2 {
+                                    Text("OAuth")
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.blue.opacity(0.2))
+                                        .foregroundStyle(.blue)
+                                        .cornerRadius(4)
+                                }
+                            }
                             Text(account.imapServer)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
                         Spacer()
+
+                        // Edit button
+                        Button(action: { accountToEdit = account }) {
+                            Image(systemName: "pencil")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Edit account")
+
+                        // Delete button
+                        Button(action: {
+                            accountToDelete = account
+                            showingDeleteConfirmation = true
+                        }) {
+                            Image(systemName: "trash")
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Delete account")
 
                         Toggle("", isOn: Binding(
                             get: { account.isEnabled },
@@ -291,12 +328,9 @@ struct AccountsSettingsView: View {
                             }
                         ))
                         .labelsHidden()
+                        .help("Enable/disable backup")
                     }
-                }
-                .onDelete { indexSet in
-                    for index in indexSet {
-                        backupManager.removeAccount(backupManager.accounts[index])
-                    }
+                    .padding(.vertical, 4)
                 }
             }
 
@@ -312,6 +346,234 @@ struct AccountsSettingsView: View {
         .sheet(isPresented: $showingAddAccount) {
             AddAccountView()
         }
+        .sheet(item: $accountToEdit) { account in
+            EditAccountView(account: account)
+        }
+        .alert("Delete Account?", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {
+                accountToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let account = accountToDelete {
+                    backupManager.removeAccount(account)
+                }
+                accountToDelete = nil
+            }
+        } message: {
+            if let account = accountToDelete {
+                Text("Are you sure you want to delete \(account.email)? This will remove the account from the app but will not delete any backed up emails.")
+            }
+        }
+    }
+}
+
+struct EditAccountView: View {
+    @EnvironmentObject var backupManager: BackupManager
+    @Environment(\.dismiss) private var dismiss
+
+    let account: EmailAccount
+
+    @State private var email: String
+    @State private var password = ""
+    @State private var imapServer: String
+    @State private var port: String
+    @State private var useSSL: Bool
+
+    @State private var isTesting = false
+    @State private var testResult: TestResult?
+
+    enum TestResult {
+        case success
+        case failure(String)
+    }
+
+    init(account: EmailAccount) {
+        self.account = account
+        _email = State(initialValue: account.email)
+        _imapServer = State(initialValue: account.imapServer)
+        _port = State(initialValue: String(account.port))
+        _useSSL = State(initialValue: account.useSSL)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Edit Account")
+                    .font(.headline)
+                Spacer()
+                Button("Cancel") {
+                    dismiss()
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            // Form
+            Form {
+                if account.authType == .oauth2 {
+                    // OAuth account - limited editing
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("Signed in with Google")
+                            .foregroundStyle(.primary)
+                    }
+
+                    LabeledContent("Email") {
+                        Text(email)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    LabeledContent("Server") {
+                        Text(imapServer)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("To change the Google account, delete this account and add a new one.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    // Password-based account - full editing
+                    TextField("Email Address", text: $email)
+                        .textContentType(.emailAddress)
+
+                    SecureField("Password", text: $password)
+
+                    Text("Enter password and test connection to save it. Leave blank to use saved password.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    TextField("IMAP Server", text: $imapServer)
+                    TextField("Port", text: $port)
+                    Toggle("Use SSL/TLS", isOn: $useSSL)
+                }
+            }
+            .formStyle(.grouped)
+
+            Divider()
+
+            // Test result
+            if let result = testResult {
+                HStack {
+                    switch result {
+                    case .success:
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("Connection successful!")
+                            .foregroundStyle(.green)
+                    case .failure(let message):
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.red)
+                        Text(message)
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
+
+            // Actions
+            HStack {
+                if account.authType != .oauth2 {
+                    Button("Test Connection") {
+                        testConnection()
+                    }
+                    .disabled(isTesting || !isFormValid)
+
+                    if isTesting {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
+                }
+
+                Spacer()
+
+                Button("Save Changes") {
+                    saveChanges()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(account.authType != .oauth2 && !isFormValid)
+            }
+            .padding()
+        }
+        .frame(width: 450, height: account.authType == .oauth2 ? 300 : 380)
+    }
+
+    var isFormValid: Bool {
+        !email.isEmpty && !imapServer.isEmpty && !port.isEmpty
+    }
+
+    func testConnection() {
+        isTesting = true
+        testResult = nil
+
+        Task {
+            do {
+                // Get password: use typed password if available, otherwise try Keychain
+                let testPassword: String
+                if !password.isEmpty {
+                    testPassword = password
+                } else if let keychainPassword = try? await KeychainService.shared.getPassword(for: account.id) {
+                    testPassword = keychainPassword
+                } else {
+                    await MainActor.run {
+                        testResult = .failure("No password provided. Please enter the password.")
+                        isTesting = false
+                    }
+                    return
+                }
+
+                let testAccount = EmailAccount(
+                    id: account.id,
+                    email: email,
+                    imapServer: imapServer,
+                    port: Int(port) ?? 993,
+                    password: testPassword,
+                    useSSL: useSSL,
+                    authType: .password
+                )
+
+                let service = IMAPService(account: testAccount)
+                try await service.connect()
+                try await service.login()
+                try await service.logout()
+
+                // Save password to Keychain on successful test
+                if !password.isEmpty {
+                    try? await KeychainService.shared.savePassword(password, for: account.id)
+                }
+
+                await MainActor.run {
+                    testResult = .success
+                    isTesting = false
+                }
+            } catch {
+                await MainActor.run {
+                    testResult = .failure(error.localizedDescription)
+                    isTesting = false
+                }
+            }
+        }
+    }
+
+    func saveChanges() {
+        var updatedAccount = account
+        updatedAccount.email = email
+        updatedAccount.username = email  // Username should match email for IMAP login
+        updatedAccount.imapServer = imapServer
+        updatedAccount.port = Int(port) ?? 993
+        updatedAccount.useSSL = useSSL
+
+        // Update password only if a new one was provided
+        let newPassword = password.isEmpty ? nil : password
+
+        backupManager.updateAccount(updatedAccount, password: newPassword)
+        dismiss()
     }
 }
 
@@ -682,6 +944,136 @@ struct RateLimitSettingsView: View {
         } else {
             selectedPreset = .custom
         }
+    }
+}
+
+struct AdvancedSettingsView: View {
+    @AppStorage("googleOAuthClientId") private var clientId = ""
+    @State private var showingClientIdHelp = false
+
+    var body: some View {
+        Form {
+            Section("Google OAuth Configuration") {
+                HStack {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(.blue)
+                    Text("To use 'Sign in with Google' for Gmail accounts, you need to configure OAuth credentials from Google Cloud Console.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Client ID")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Enter your Google OAuth Client ID", text: $clientId)
+                        .textFieldStyle(.roundedBorder)
+                        .help("Your Google Cloud OAuth 2.0 Client ID (e.g., 123456789-abc.apps.googleusercontent.com)")
+                }
+
+                if !clientId.isEmpty {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("OAuth configured")
+                            .foregroundStyle(.green)
+                    }
+                    .font(.caption)
+                } else {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("OAuth not configured - Gmail accounts will require App Passwords")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.caption)
+                }
+
+                Button("Setup Instructions") {
+                    showingClientIdHelp = true
+                }
+                .buttonStyle(.link)
+            }
+
+            Section("How to Get a Client ID") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("1. Go to Google Cloud Console")
+                    Text("2. Create a new project or select existing")
+                    Text("3. Enable the Gmail API")
+                    Text("4. Go to Credentials → Create Credentials → OAuth Client ID")
+                    Text("5. Select 'macOS' as application type")
+                    Text("6. Copy the Client ID and paste it above")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Link("Open Google Cloud Console",
+                     destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
+                    .font(.caption)
+            }
+
+            Section {
+                HStack {
+                    Image(systemName: "lock.shield.fill")
+                        .foregroundStyle(.green)
+                    Text("Your credentials are stored locally on this device. OAuth tokens are stored securely in the macOS Keychain.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .sheet(isPresented: $showingClientIdHelp) {
+            OAuthSetupHelpView()
+        }
+    }
+}
+
+struct OAuthSetupHelpView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Setting Up Google OAuth")
+                    .font(.headline)
+                Spacer()
+                Button("Done") { dismiss() }
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Group {
+                        Text("Step 1: Create a Google Cloud Project")
+                            .font(.subheadline.bold())
+                        Text("Go to console.cloud.google.com and create a new project, or select an existing one.")
+
+                        Text("Step 2: Enable the Gmail API")
+                            .font(.subheadline.bold())
+                        Text("In your project, go to 'APIs & Services' → 'Library' and search for 'Gmail API'. Enable it.")
+
+                        Text("Step 3: Configure OAuth Consent Screen")
+                            .font(.subheadline.bold())
+                        Text("Go to 'OAuth consent screen' and configure it as 'External'. Add the required scopes: 'email', 'profile', and 'https://mail.google.com/'.")
+
+                        Text("Step 4: Create OAuth Credentials")
+                            .font(.subheadline.bold())
+                        Text("Go to 'Credentials' → 'Create Credentials' → 'OAuth client ID'. Select 'macOS' as the application type. Use 'com.kzahedi.IMAPBackup' as the bundle ID.")
+
+                        Text("Step 5: Copy the Client ID")
+                            .font(.subheadline.bold())
+                        Text("Copy the generated Client ID (looks like: 123456789-abc.apps.googleusercontent.com) and paste it in the Advanced settings.")
+                    }
+                    .font(.body)
+                }
+            }
+
+            Link("Open Google Cloud Console",
+                 destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
+        }
+        .padding()
+        .frame(width: 500, height: 400)
     }
 }
 

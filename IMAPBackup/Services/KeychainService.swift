@@ -91,6 +91,72 @@ actor KeychainService {
         guard !hasPassword(for: accountId) else { return }
         try savePassword(password, for: accountId)
     }
+
+    // MARK: - OAuth Token Management (with custom service)
+
+    /// Save password/token to Keychain with custom service
+    func savePassword(_ password: String, for accountId: UUID, service customService: String) throws {
+        let account = accountId.uuidString
+        guard let passwordData = password.data(using: .utf8) else {
+            throw KeychainError.encodingFailed
+        }
+
+        // Delete any existing password first
+        try? deletePassword(for: accountId, service: customService)
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: customService,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: passwordData,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
+        ]
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw KeychainError.saveFailed(status)
+        }
+    }
+
+    /// Retrieve password/token from Keychain with custom service
+    func getPassword(for accountId: UUID, service customService: String) throws -> String {
+        let account = accountId.uuidString
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: customService,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess,
+              let passwordData = result as? Data,
+              let password = String(data: passwordData, encoding: .utf8) else {
+            throw KeychainError.notFound
+        }
+
+        return password
+    }
+
+    /// Delete password/token from Keychain with custom service
+    func deletePassword(for accountId: UUID, service customService: String) throws {
+        let account = accountId.uuidString
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: customService,
+            kSecAttrAccount as String: account
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.deleteFailed(status)
+        }
+    }
 }
 
 // MARK: - Errors

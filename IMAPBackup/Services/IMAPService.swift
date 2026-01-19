@@ -20,10 +20,15 @@ actor IMAPService {
         self.rateLimitSettings = RateLimitSettings.default
     }
 
-    /// Configure rate limiting for this service
-    func configureRateLimit(settings: RateLimitSettings) {
+    /// Configure rate limiting for this service with a shared tracker
+    /// The tracker should be shared between accounts on the same server
+    func configureRateLimit(settings: RateLimitSettings, sharedTracker: ThrottleTracker? = nil) {
         self.rateLimitSettings = settings
-        self.throttleTracker = ThrottleTracker(settings: settings)
+        if let tracker = sharedTracker {
+            self.throttleTracker = tracker
+        } else {
+            self.throttleTracker = ThrottleTracker(settings: settings)
+        }
     }
 
     /// Get or create throttle tracker
@@ -183,6 +188,16 @@ actor IMAPService {
         // Read server greeting
         _ = try await readResponse()
 
+        // Check authentication type
+        if account.authType == .oauth2 {
+            try await loginWithOAuth2()
+        } else {
+            try await loginWithPassword(password: password)
+        }
+    }
+
+    /// Login with traditional password authentication
+    private func loginWithPassword(password: String? = nil) async throws {
         // Trim whitespace from credentials
         let username = account.username.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -217,6 +232,49 @@ actor IMAPService {
         }
     }
 
+    /// Login with OAuth2 XOAUTH2 SASL mechanism
+    private func loginWithOAuth2() async throws {
+        // Get valid access token (refreshing if needed)
+        let accessToken: String
+        do {
+            accessToken = try await account.getValidAccessToken()
+        } catch {
+            logError("Failed to get OAuth access token: \(error.localizedDescription)")
+            throw IMAPError.authenticationFailed
+        }
+
+        // Generate XOAUTH2 token
+        let xoauth2Token = GoogleOAuthService.generateXOAuth2Token(
+            email: account.email,
+            accessToken: accessToken
+        )
+
+        // First, check CAPABILITY to ensure XOAUTH2 is supported
+        let capResponse = try await sendCommand("CAPABILITY")
+        guard capResponse.uppercased().contains("AUTH=XOAUTH2") else {
+            logError("Server does not support XOAUTH2 authentication")
+            throw IMAPError.authenticationFailed
+        }
+
+        // Send AUTHENTICATE XOAUTH2 command
+        let response = try await sendCommand("AUTHENTICATE XOAUTH2 \(xoauth2Token)")
+
+        // Check for success (OK) or failure (NO/BAD)
+        if response.contains(" NO ") || response.contains(" BAD ") {
+            // Try to parse error for better debugging
+            if response.contains("Invalid credentials") || response.contains("AUTHENTICATIONFAILED") {
+                logError("OAuth2 authentication failed - token may be invalid or revoked")
+            }
+            throw IMAPError.authenticationFailed
+        }
+
+        guard response.contains("OK") else {
+            throw IMAPError.authenticationFailed
+        }
+
+        logInfo("Successfully authenticated with OAuth2")
+    }
+
     func logout() async throws {
         _ = try await sendCommand("LOGOUT")
         await disconnect()
@@ -243,9 +301,101 @@ actor IMAPService {
 
     func fetchEmail(uid: UInt32) async throws -> Data {
         return try await executeWithRecovery {
-            let response = try await self.sendCommand("UID FETCH \(uid) BODY.PEEK[]")
-            return self.extractEmailData(from: response)
+            try await self.fetchEmailWithLiteralParsing(uid: uid)
         }
+    }
+
+    /// Fetch email with proper IMAP literal parsing
+    private func fetchEmailWithLiteralParsing(uid: UInt32) async throws -> Data {
+        guard let connection = connection else {
+            throw IMAPError.notConnected
+        }
+
+        await applyRateLimit()
+
+        tagCounter += 1
+        let tag = "A\(String(format: "%04d", tagCounter))"
+        let command = "\(tag) UID FETCH \(uid) BODY.PEEK[]\r\n"
+
+        // Send command
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: command.data(using: .utf8), completion: .contentProcessed { error in
+                if let error = error {
+                    continuation.resume(throwing: IMAPError.sendFailed(error.localizedDescription))
+                } else {
+                    continuation.resume()
+                }
+            })
+        }
+
+        // Simple state machine
+        var allData = Data()
+        var emailData = Data()
+        var literalSize: Int? = nil
+        var literalOffset: Int = 0
+        var literalBytesRead: Int = 0
+
+        // Read chunks until we have the complete response
+        while true {
+            let chunk: Data = try await withCheckedThrowingContinuation { continuation in
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, error in
+                    if let error = error {
+                        continuation.resume(throwing: IMAPError.receiveFailed(error.localizedDescription))
+                    } else if let data = data, !data.isEmpty {
+                        continuation.resume(returning: data)
+                    } else {
+                        continuation.resume(throwing: IMAPError.receiveFailed("No data received"))
+                    }
+                }
+            }
+
+            allData.append(chunk)
+
+            // Try to find literal size if we don't have it yet
+            if literalSize == nil {
+                // Only look at first 1KB for the IMAP header (rest may be binary)
+                let headerData = allData.prefix(1024)
+                if let str = String(data: headerData, encoding: .utf8) ?? String(data: headerData, encoding: .ascii) {
+                    // Look for {size}\r\n pattern
+                    if let braceStart = str.range(of: "{"),
+                       let braceEnd = str.range(of: "}\r\n", range: braceStart.upperBound..<str.endIndex),
+                       let size = Int(str[braceStart.upperBound..<braceEnd.lowerBound]) {
+                        literalSize = size
+                        // Calculate byte offset (not character offset!)
+                        let headerStr = String(str[..<braceEnd.upperBound])
+                        literalOffset = headerStr.utf8.count
+                        logDebug("fetchEmail UID \(uid): Found literal size \(size), data starts at byte offset \(literalOffset)")
+                    }
+                }
+            }
+
+            // If we know the literal size, check if we have all the data
+            if let size = literalSize {
+                let availableBytes = allData.count - literalOffset
+                if availableBytes >= size {
+                    // We have all the literal data
+                    emailData = Data(allData[literalOffset..<(literalOffset + size)])
+                    literalBytesRead = size
+
+                    // Check if tagged response is present after the literal
+                    let afterLiteral = allData.suffix(from: literalOffset + size)
+                    if let afterStr = String(data: afterLiteral, encoding: .utf8) ?? String(data: afterLiteral, encoding: .ascii) {
+                        if afterStr.contains("\(tag) OK") || afterStr.contains("\(tag) NO") || afterStr.contains("\(tag) BAD") {
+                            logDebug("fetchEmail UID \(uid): Complete - \(emailData.count) bytes")
+                            break
+                        }
+                    }
+                }
+            }
+
+            // Safety check - don't accumulate more than 50MB
+            if allData.count > 50 * 1024 * 1024 {
+                throw IMAPError.receiveFailed("Response too large")
+            }
+        }
+
+        await recordSuccess()
+        return emailData
     }
 
     /// Fetch email size without downloading the full body
@@ -431,7 +581,13 @@ actor IMAPService {
             fullResponse += chunk
 
             // Check if we have the complete tagged response
-            if chunk.contains("\(tag) OK") || chunk.contains("\(tag) NO") || chunk.contains("\(tag) BAD") {
+            // Tagged responses in IMAP start at the beginning of a line
+            // We check for \r\n before the tag, or tag at the very start
+            let hasTaggedOK = chunk.contains("\r\n\(tag) OK") || chunk.hasPrefix("\(tag) OK")
+            let hasTaggedNO = chunk.contains("\r\n\(tag) NO") || chunk.hasPrefix("\(tag) NO")
+            let hasTaggedBAD = chunk.contains("\r\n\(tag) BAD") || chunk.hasPrefix("\(tag) BAD")
+
+            if hasTaggedOK || hasTaggedNO || hasTaggedBAD {
                 break
             }
         }
@@ -573,16 +729,19 @@ actor IMAPService {
         // Find the literal size marker {size}
         // Look for pattern like "BODY[] {" or just find the first {digits}
         guard let braceStart = response.range(of: "{") else {
+            logError("extractEmailData: No '{' found. Response length: \(response.count), preview: \(String(response.prefix(500)))")
             return Data()
         }
 
         guard let braceEnd = response.range(of: "}", range: braceStart.upperBound..<response.endIndex) else {
+            logError("extractEmailData: No '}' found. Response preview: \(String(response.prefix(500)))")
             return Data()
         }
 
         // Parse the size
         let sizeString = String(response[braceStart.upperBound..<braceEnd.lowerBound])
         guard let size = Int(sizeString), size > 0 else {
+            logError("extractEmailData: Invalid size '\(sizeString)'. Response preview: \(String(response.prefix(500)))")
             return Data()
         }
 
