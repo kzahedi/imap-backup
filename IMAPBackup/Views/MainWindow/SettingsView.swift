@@ -785,13 +785,115 @@ struct VerificationSettingsView: View {
                     }
                     .buttonStyle(.borderless)
                 }
+
+                // Repair section - show when there are missing emails
+                if verificationService.hasMissingEmails {
+                    Section("Repair Missing Emails") {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text("\(verificationService.totalMissingEmails) email(s) missing locally. Click Repair to download them now.")
+                                .font(.caption)
+                        }
+
+                        Button(action: {
+                            Task {
+                                _ = await verificationService.repairAll(
+                                    accounts: backupManager.accounts,
+                                    backupLocation: backupManager.backupLocation
+                                )
+                            }
+                        }) {
+                            HStack {
+                                if verificationService.isRepairing {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                    Text("Repairing...")
+                                } else {
+                                    Image(systemName: "wrench.and.screwdriver")
+                                    Text("Repair Missing Emails")
+                                }
+                            }
+                        }
+                        .disabled(verificationService.isRepairing || verificationService.isVerifying)
+
+                        if verificationService.isRepairing {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ProgressView(value: verificationService.repairProgress.progress)
+                                    .progressViewStyle(.linear)
+
+                                HStack {
+                                    Text("Downloaded: \(verificationService.repairProgress.downloaded)/\(verificationService.repairProgress.totalMissing)")
+                                    Spacer()
+                                    if verificationService.repairProgress.failed > 0 {
+                                        Text("Failed: \(verificationService.repairProgress.failed)")
+                                            .foregroundStyle(.red)
+                                    }
+                                }
+                                .font(.caption)
+
+                                if !verificationService.repairProgress.currentFolder.isEmpty {
+                                    Text("Folder: \(verificationService.repairProgress.currentFolder)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                if !verificationService.repairProgress.currentEmail.isEmpty {
+                                    Text("Email: \(verificationService.repairProgress.currentEmail)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Repair results section
+            if !verificationService.lastRepairResults.isEmpty {
+                Section("Last Repair Results") {
+                    ForEach(verificationService.lastRepairResults) { result in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(result.accountEmail)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text(result.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(result.failed > 0 ? .orange : .green)
+                            }
+
+                            if !result.errors.isEmpty {
+                                DisclosureGroup("Show \(result.errors.count) error(s)") {
+                                    ForEach(result.errors, id: \.self) { error in
+                                        Text(error)
+                                            .font(.caption2)
+                                            .foregroundStyle(.red)
+                                    }
+                                }
+                                .font(.caption)
+                            }
+
+                            Text("Repaired \(result.repairedAt, style: .relative) ago")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    Button("Clear Repair Results") {
+                        verificationService.clearRepairResults()
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
 
             Section {
                 HStack {
                     Image(systemName: "lightbulb.fill")
                         .foregroundStyle(.yellow)
-                    Text("Run verification periodically to ensure your backups are complete. Missing emails will be downloaded on the next backup.")
+                    Text("Run verification periodically to ensure your backups are complete. Use Repair to download any missing emails immediately.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
