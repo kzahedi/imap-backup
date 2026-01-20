@@ -1,12 +1,76 @@
 import Foundation
 import SwiftUI
 
+/// Days of the week for scheduling
+enum Weekday: Int, Codable, CaseIterable, Identifiable {
+    case sunday = 1
+    case monday = 2
+    case tuesday = 3
+    case wednesday = 4
+    case thursday = 5
+    case friday = 6
+    case saturday = 7
+
+    var id: Int { rawValue }
+
+    var shortName: String {
+        switch self {
+        case .sunday: return "Sun"
+        case .monday: return "Mon"
+        case .tuesday: return "Tue"
+        case .wednesday: return "Wed"
+        case .thursday: return "Thu"
+        case .friday: return "Fri"
+        case .saturday: return "Sat"
+        }
+    }
+
+    var fullName: String {
+        switch self {
+        case .sunday: return "Sunday"
+        case .monday: return "Monday"
+        case .tuesday: return "Tuesday"
+        case .wednesday: return "Wednesday"
+        case .thursday: return "Thursday"
+        case .friday: return "Friday"
+        case .saturday: return "Saturday"
+        }
+    }
+}
+
+/// Custom schedule interval units
+enum ScheduleIntervalUnit: String, Codable, CaseIterable {
+    case hours = "hours"
+    case days = "days"
+    case weeks = "weeks"
+
+    var displayName: String {
+        rawValue.capitalized
+    }
+
+    func toSeconds(_ value: Int) -> TimeInterval {
+        switch self {
+        case .hours: return TimeInterval(value * 3600)
+        case .days: return TimeInterval(value * 86400)
+        case .weeks: return TimeInterval(value * 604800)
+        }
+    }
+}
+
+/// Backup schedule configuration
+struct ScheduleConfiguration: Codable, Equatable {
+    var weekday: Weekday = .monday
+    var customInterval: Int = 1
+    var customUnit: ScheduleIntervalUnit = .days
+}
+
 /// Backup schedule options
 enum BackupSchedule: String, Codable, CaseIterable {
     case manual = "Manual"
     case hourly = "Every Hour"
     case daily = "Daily"
     case weekly = "Weekly"
+    case custom = "Custom"
 
     var interval: TimeInterval? {
         switch self {
@@ -14,14 +78,23 @@ enum BackupSchedule: String, Codable, CaseIterable {
         case .hourly: return 3600
         case .daily: return 86400
         case .weekly: return 604800
+        case .custom: return nil // Calculated from configuration
         }
     }
 
     var needsTimeSelection: Bool {
         switch self {
-        case .daily, .weekly: return true
+        case .daily, .weekly, .custom: return true
         default: return false
         }
+    }
+
+    var needsWeekdaySelection: Bool {
+        self == .weekly
+    }
+
+    var needsCustomConfiguration: Bool {
+        self == .custom
     }
 }
 
@@ -34,6 +107,7 @@ class BackupManager: ObservableObject {
     @Published var backupLocation: URL
     @Published var schedule: BackupSchedule = .manual
     @Published var scheduledTime: Date = Calendar.current.date(bySettingHour: 2, minute: 0, second: 0, of: Date()) ?? Date()
+    @Published var scheduleConfiguration: ScheduleConfiguration = ScheduleConfiguration()
     @Published var nextScheduledBackup: Date?
 
     /// Threshold above which emails are streamed directly to disk (in bytes)
@@ -49,6 +123,7 @@ class BackupManager: ObservableObject {
     private let accountsKey = "EmailAccounts"
     private let scheduleKey = "BackupSchedule"
     private let scheduleTimeKey = "BackupScheduleTime"
+    private let scheduleConfigKey = "BackupScheduleConfig"
     private let backupLocationKey = "BackupLocation"
     private let streamingThresholdKey = "StreamingThresholdBytes"
 
@@ -116,13 +191,27 @@ class BackupManager: ObservableObject {
     // MARK: - Account Management
 
     func addAccount(_ account: EmailAccount, password: String?) {
-        accounts.append(account)
+        var mutableAccount = account
+        accounts.append(mutableAccount)
         saveAccounts()
+
         // Save password to Keychain (only for non-OAuth accounts)
-        if let password = password {
+        // Use consumeTemporaryPassword to clear the password from the account struct
+        let passwordToSave = password ?? mutableAccount.consumeTemporaryPassword()
+        if let passwordToSave = passwordToSave {
             Task {
-                try? await KeychainService.shared.savePassword(password, for: account.id)
+                do {
+                    try await KeychainService.shared.savePassword(passwordToSave, for: account.id)
+                    logInfo("Password saved to Keychain for \(account.email)")
+                } catch {
+                    logError("Failed to save password to Keychain for \(account.email): \(error.localizedDescription)")
+                }
             }
+        }
+
+        // Clear the temporary password from the stored account
+        if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+            accounts[index].clearTemporaryPassword()
         }
     }
 
@@ -131,7 +220,11 @@ class BackupManager: ObservableObject {
         saveAccounts()
         // Remove password from Keychain
         Task {
-            try? await KeychainService.shared.deletePassword(for: account.id)
+            do {
+                try await KeychainService.shared.deletePassword(for: account.id)
+            } catch {
+                logWarning("Failed to delete password from Keychain for \(account.email): \(error.localizedDescription)")
+            }
         }
     }
 
@@ -142,7 +235,11 @@ class BackupManager: ObservableObject {
             // Update password in Keychain if provided
             if let password = password {
                 Task {
-                    try? await KeychainService.shared.savePassword(password, for: account.id)
+                    do {
+                        try await KeychainService.shared.savePassword(password, for: account.id)
+                    } catch {
+                        logError("Failed to update password in Keychain for \(account.email): \(error.localizedDescription)")
+                    }
                 }
             }
         }
@@ -188,6 +285,11 @@ class BackupManager: ObservableObject {
         if let savedTimeInterval = UserDefaults.standard.object(forKey: scheduleTimeKey) as? TimeInterval {
             self.scheduledTime = Date(timeIntervalSince1970: savedTimeInterval)
         }
+
+        if let configData = UserDefaults.standard.data(forKey: scheduleConfigKey),
+           let config = try? JSONDecoder().decode(ScheduleConfiguration.self, from: configData) {
+            self.scheduleConfiguration = config
+        }
     }
 
     func setSchedule(_ newSchedule: BackupSchedule) {
@@ -199,6 +301,14 @@ class BackupManager: ObservableObject {
     func setScheduledTime(_ time: Date) {
         scheduledTime = time
         UserDefaults.standard.set(time.timeIntervalSince1970, forKey: scheduleTimeKey)
+        updateScheduler()
+    }
+
+    func setScheduleConfiguration(_ config: ScheduleConfiguration) {
+        scheduleConfiguration = config
+        if let encoded = try? JSONEncoder().encode(config) {
+            UserDefaults.standard.set(encoded, forKey: scheduleConfigKey)
+        }
         updateScheduler()
     }
 
@@ -258,7 +368,49 @@ class BackupManager: ObservableObject {
             }
 
         case .weekly:
-            // Next week at scheduled time (same weekday as now, or next week)
+            // Next occurrence of the selected weekday at scheduled time
+            let hour = calendar.component(.hour, from: scheduledTime)
+            let minute = calendar.component(.minute, from: scheduledTime)
+            let targetWeekday = scheduleConfiguration.weekday.rawValue
+
+            // Find the next occurrence of the target weekday
+            var components = calendar.dateComponents([.year, .month, .day, .weekday], from: now)
+            let currentWeekday = components.weekday!
+
+            var daysUntilTarget = targetWeekday - currentWeekday
+            if daysUntilTarget < 0 {
+                daysUntilTarget += 7
+            }
+
+            // If it's the target day, check if the time has passed
+            if daysUntilTarget == 0 {
+                var todayComponents = calendar.dateComponents([.year, .month, .day], from: now)
+                todayComponents.hour = hour
+                todayComponents.minute = minute
+                todayComponents.second = 0
+
+                if let todayBackup = calendar.date(from: todayComponents), todayBackup > now {
+                    return todayBackup
+                } else {
+                    // Same day but time passed, schedule for next week
+                    daysUntilTarget = 7
+                }
+            }
+
+            if let targetDate = calendar.date(byAdding: .day, value: daysUntilTarget, to: now) {
+                var targetComponents = calendar.dateComponents([.year, .month, .day], from: targetDate)
+                targetComponents.hour = hour
+                targetComponents.minute = minute
+                targetComponents.second = 0
+                return calendar.date(from: targetComponents)
+            }
+            return nil
+
+        case .custom:
+            // Calculate based on custom interval
+            let interval = scheduleConfiguration.customUnit.toSeconds(scheduleConfiguration.customInterval)
+
+            // For custom schedules, we calculate from the scheduled time today
             let hour = calendar.component(.hour, from: scheduledTime)
             let minute = calendar.component(.minute, from: scheduledTime)
 
@@ -267,11 +419,15 @@ class BackupManager: ObservableObject {
             components.minute = minute
             components.second = 0
 
-            if let thisWeek = calendar.date(from: components), thisWeek > now {
-                return thisWeek
-            } else {
-                return calendar.date(byAdding: .day, value: 7, to: calendar.date(from: components) ?? now)
+            if let baseDate = calendar.date(from: components) {
+                if baseDate > now {
+                    return baseDate
+                } else {
+                    // Add one interval
+                    return baseDate.addingTimeInterval(interval)
+                }
             }
+            return nil
         }
     }
 

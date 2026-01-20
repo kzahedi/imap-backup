@@ -69,7 +69,11 @@ actor AttachmentService {
                 counter += 1
             }
 
-            try attachment.data.write(to: fileURL)
+            // Write to temp file first, then atomically move to final location
+            let tempURL = fileURL.appendingPathExtension("tmp")
+            try attachment.data.write(to: tempURL)
+            try fileManager.moveItem(at: tempURL, to: fileURL)
+
             savedURLs.append(fileURL)
         }
 

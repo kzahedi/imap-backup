@@ -24,9 +24,15 @@ struct AccountRowView: View {
                     .lineLimit(1)
 
                 if let progress = progress, progress.status.isActive {
-                    Text(progress.status.rawValue)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        Text(progress.status.rawValue)
+                        if let eta = progress.estimatedTimeRemaining, progress.status == .downloading {
+                            Text("·")
+                            Text(formatDuration(eta))
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 } else {
                     // Show stats: email count and size
                     HStack(spacing: 8) {
@@ -55,6 +61,14 @@ struct AccountRowView: View {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter.string(from: seconds) ?? "--"
     }
 
     var statusColor: Color {

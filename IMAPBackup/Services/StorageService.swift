@@ -116,7 +116,11 @@ actor StorageService {
         let fileURL = attachmentFolderURL.appendingPathComponent(sanitizedFilename)
         let finalURL = uniqueFileURL(for: fileURL)
 
-        try data.write(to: finalURL)
+        // Write to temp file first, then atomically move to final location
+        let tempURL = finalURL.appendingPathExtension("tmp")
+        try data.write(to: tempURL)
+        try fileManager.moveItem(at: tempURL, to: finalURL)
+
         return finalURL
     }
 

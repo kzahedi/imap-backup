@@ -1,12 +1,55 @@
 import Foundation
 import Network
 
-// Simple trace logging to file and stderr
-private func trace(_ msg: String) {
-    let line = "\(Date()): \(msg)\n"
-    fputs(line, stderr)
+// MARK: - Sensitive Data Redaction
 
-    // Also write to Documents folder
+/// Redacts sensitive data from log messages to prevent credential leakage
+private func redactSensitiveData(_ message: String) -> String {
+    var result = message
+
+    // Redact LOGIN command passwords: LOGIN "user" "password" -> LOGIN "user" "[REDACTED]"
+    if let loginRange = result.range(of: #"LOGIN\s+"[^"]*"\s+"[^"]*""#, options: .regularExpression) {
+        // Find the second quoted string (password) and redact it
+        let loginPart = String(result[loginRange])
+        if let passwordMatch = loginPart.range(of: #""\s+"[^"]*"$"#, options: .regularExpression) {
+            let redacted = loginPart.replacingCharacters(in: passwordMatch, with: "\" \"[REDACTED]\"")
+            result = result.replacingCharacters(in: loginRange, with: redacted)
+        }
+    }
+
+    // Redact AUTHENTICATE XOAUTH2 tokens: AUTHENTICATE XOAUTH2 <token> -> AUTHENTICATE XOAUTH2 [REDACTED]
+    if let authRange = result.range(of: #"AUTHENTICATE\s+XOAUTH2\s+\S+"#, options: .regularExpression) {
+        result = result.replacingCharacters(in: authRange, with: "AUTHENTICATE XOAUTH2 [REDACTED]")
+    }
+
+    // Redact any base64-encoded OAuth tokens (they start with eyJ for JWT)
+    result = result.replacingOccurrences(
+        of: #"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"#,
+        with: "[REDACTED_TOKEN]",
+        options: .regularExpression
+    )
+
+    // Redact any standalone base64 strings that look like tokens (40+ chars of base64)
+    result = result.replacingOccurrences(
+        of: #"(?<![A-Za-z0-9])[A-Za-z0-9+/=]{40,}(?![A-Za-z0-9])"#,
+        with: "[REDACTED_TOKEN]",
+        options: .regularExpression
+    )
+
+    return result
+}
+
+// Simple trace logging to file and stderr with sensitive data redaction
+private func trace(_ msg: String) {
+    let sanitizedMsg = redactSensitiveData(msg)
+    let line = "\(Date()): \(sanitizedMsg)\n"
+
+    #if DEBUG
+    fputs(line, stderr)
+    #endif
+
+    // Also write to Documents folder (only in debug builds for security)
+    #if DEBUG
     let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     let logURL = docsURL.appendingPathComponent("imap_trace.log")
     if let data = line.data(using: .utf8) {
@@ -20,6 +63,7 @@ private func trace(_ msg: String) {
             try? data.write(to: logURL)
         }
     }
+    #endif
 }
 
 /// IMAP Service for connecting to mail servers and fetching emails

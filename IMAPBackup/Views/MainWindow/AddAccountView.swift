@@ -19,8 +19,7 @@ struct AddAccountView: View {
     @State private var oauthTokens: GoogleOAuthTokens?
 
     enum AccountType: String, CaseIterable {
-        case gmailOAuth = "Gmail (Recommended)"
-        case gmailAppPassword = "Gmail (App Password)"
+        case gmailOAuth = "Gmail"
         case ionos = "IONOS"
         case custom = "Custom IMAP"
     }
@@ -61,7 +60,7 @@ struct AddAccountView: View {
                     testResult = nil
 
                     switch newValue {
-                    case .gmailOAuth, .gmailAppPassword:
+                    case .gmailOAuth:
                         imapServer = "imap.gmail.com"
                         port = "993"
                         useSSL = true
@@ -140,8 +139,8 @@ struct AddAccountView: View {
                 }
 
                 // Password for non-OAuth types
-                if accountType == .gmailAppPassword || accountType == .ionos || accountType == .custom {
-                    SecureField(accountType == .gmailAppPassword ? "App Password" : "Password", text: $password)
+                if accountType == .ionos || accountType == .custom {
+                    SecureField("Password", text: $password)
                 }
 
                 // Server settings for custom
@@ -151,16 +150,6 @@ struct AddAccountView: View {
                     Toggle("Use SSL/TLS", isOn: $useSSL)
                 }
 
-                // Help text for Gmail App Password
-                if accountType == .gmailAppPassword {
-                    Text("Use an App Password, not your regular password.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Link("How to create an App Password",
-                         destination: URL(string: "https://myaccount.google.com/apppasswords")!)
-                        .font(.caption)
-                }
             }
             .formStyle(.grouped)
 
@@ -219,7 +208,7 @@ struct AddAccountView: View {
         switch accountType {
         case .gmailOAuth:
             return oauthTokens != nil && !email.isEmpty
-        case .gmailAppPassword, .ionos, .custom:
+        case .ionos, .custom:
             return !email.isEmpty && !password.isEmpty && !imapServer.isEmpty && !port.isEmpty
         }
     }
@@ -311,15 +300,6 @@ struct AddAccountView: View {
         switch accountType {
         case .gmailOAuth:
             return EmailAccount.gmailOAuth(email: email)
-        case .gmailAppPassword:
-            return EmailAccount(
-                email: email,
-                imapServer: imapServer,
-                port: Int(port) ?? 993,
-                password: password,
-                useSSL: useSSL,
-                authType: .password
-            )
         case .ionos, .custom:
             return EmailAccount(
                 email: email,

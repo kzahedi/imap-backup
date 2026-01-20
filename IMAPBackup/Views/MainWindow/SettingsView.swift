@@ -203,69 +203,246 @@ struct ScheduleSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Automatic Backup") {
-                Picker("Schedule", selection: Binding(
+            // Repeat/Frequency Section (like Calendar's "Repeat" row)
+            Section {
+                Picker("Repeat", selection: Binding(
                     get: { backupManager.schedule },
                     set: { backupManager.setSchedule($0) }
                 )) {
-                    ForEach(BackupSchedule.allCases, id: \.self) { schedule in
-                        Text(schedule.rawValue).tag(schedule)
-                    }
+                    Text("Never").tag(BackupSchedule.manual)
+                    Text("Hourly").tag(BackupSchedule.hourly)
+                    Text("Daily").tag(BackupSchedule.daily)
+                    Text("Weekly").tag(BackupSchedule.weekly)
+                    Text("Custom").tag(BackupSchedule.custom)
                 }
-                .pickerStyle(.radioGroup)
+                .pickerStyle(.menu)
 
+                // Weekday selection for weekly (like Calendar's day picker)
+                if backupManager.schedule.needsWeekdaySelection {
+                    WeekdayPicker(
+                        selectedWeekday: Binding(
+                            get: { backupManager.scheduleConfiguration.weekday },
+                            set: { newWeekday in
+                                var config = backupManager.scheduleConfiguration
+                                config.weekday = newWeekday
+                                backupManager.setScheduleConfiguration(config)
+                            }
+                        )
+                    )
+                }
+
+                // Custom interval configuration
+                if backupManager.schedule.needsCustomConfiguration {
+                    CustomIntervalPicker(
+                        interval: Binding(
+                            get: { backupManager.scheduleConfiguration.customInterval },
+                            set: { newValue in
+                                var config = backupManager.scheduleConfiguration
+                                config.customInterval = newValue
+                                backupManager.setScheduleConfiguration(config)
+                            }
+                        ),
+                        unit: Binding(
+                            get: { backupManager.scheduleConfiguration.customUnit },
+                            set: { newValue in
+                                var config = backupManager.scheduleConfiguration
+                                config.customUnit = newValue
+                                backupManager.setScheduleConfiguration(config)
+                            }
+                        )
+                    )
+                }
+
+                // Time picker (like Calendar's time selection)
                 if backupManager.schedule.needsTimeSelection {
                     DatePicker(
-                        "Backup time",
+                        "Time",
                         selection: Binding(
                             get: { backupManager.scheduledTime },
                             set: { backupManager.setScheduledTime($0) }
                         ),
                         displayedComponents: .hourAndMinute
                     )
-                    .datePickerStyle(.graphical)
+                    .datePickerStyle(.compact)
+                }
+            } header: {
+                Text("Schedule")
+            } footer: {
+                if backupManager.schedule != .manual {
+                    Text(scheduleDescription)
                 }
             }
 
-            Section("Status") {
+            // Next Backup Section
+            Section("Next Backup") {
                 if backupManager.schedule != .manual {
                     HStack {
-                        Image(systemName: "clock.fill")
+                        Image(systemName: "calendar.badge.clock")
                             .foregroundStyle(.blue)
-                        VStack(alignment: .leading) {
-                            Text("Next scheduled backup")
-                                .foregroundStyle(.secondary)
+                            .font(.title2)
+                            .frame(width: 32)
+
+                        VStack(alignment: .leading, spacing: 4) {
                             if let nextBackup = backupManager.nextScheduledBackup {
-                                Text(nextBackup, style: .relative)
+                                Text(nextBackup, style: .date)
                                     .font(.headline)
+                                Text(nextBackup, style: .time)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Calculating...")
+                                    .foregroundStyle(.secondary)
                             }
+                        }
+
+                        Spacer()
+
+                        if let nextBackup = backupManager.nextScheduledBackup {
+                            Text(nextBackup, style: .relative)
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundStyle(.blue)
+                                .clipShape(Capsule())
                         }
                     }
                 } else {
                     HStack {
-                        Image(systemName: "clock")
+                        Image(systemName: "calendar")
                             .foregroundStyle(.secondary)
+                            .font(.title2)
+                            .frame(width: 32)
+
                         Text("Automatic backup is disabled")
                             .foregroundStyle(.secondary)
                     }
                 }
+            }
 
+            // Last Backup Section
+            Section("Last Backup") {
                 if let lastAccount = backupManager.accounts.first(where: { $0.lastBackupDate != nil }),
                    let lastBackup = lastAccount.lastBackupDate {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                        VStack(alignment: .leading) {
-                            Text("Last backup")
+                            .font(.title2)
+                            .frame(width: 32)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(lastBackup, style: .date)
+                                .font(.headline)
+                            Text(lastBackup, style: .time)
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Text(lastBackup, style: .relative) + Text(" ago")
                         }
+
+                        Spacer()
+
+                        Text(lastBackup, style: .relative) + Text(" ago")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    HStack {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(.secondary)
+                            .font(.title2)
+                            .frame(width: 32)
+
+                        Text("No backups yet")
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    private var scheduleDescription: String {
+        switch backupManager.schedule {
+        case .manual:
+            return ""
+        case .hourly:
+            return "Backup will run every hour."
+        case .daily:
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            return "Backup will run daily at \(formatter.string(from: backupManager.scheduledTime))."
+        case .weekly:
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            return "Backup will run every \(backupManager.scheduleConfiguration.weekday.fullName) at \(formatter.string(from: backupManager.scheduledTime))."
+        case .custom:
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            let interval = backupManager.scheduleConfiguration.customInterval
+            let unit = backupManager.scheduleConfiguration.customUnit.displayName.lowercased()
+            return "Backup will run every \(interval) \(interval == 1 ? String(unit.dropLast()) : unit) starting at \(formatter.string(from: backupManager.scheduledTime))."
+        }
+    }
+}
+
+/// Weekday picker styled like Apple Calendar
+struct WeekdayPicker: View {
+    @Binding var selectedWeekday: Weekday
+
+    var body: some View {
+        HStack {
+            Text("Day")
+            Spacer()
+            HStack(spacing: 4) {
+                ForEach(Weekday.allCases) { day in
+                    Button(action: {
+                        selectedWeekday = day
+                    }) {
+                        Text(day.shortName)
+                            .font(.caption)
+                            .fontWeight(selectedWeekday == day ? .semibold : .regular)
+                            .frame(width: 36, height: 28)
+                            .background(selectedWeekday == day ? Color.accentColor : Color.clear)
+                            .foregroundStyle(selectedWeekday == day ? .white : .primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(4)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+/// Custom interval picker for custom schedules
+struct CustomIntervalPicker: View {
+    @Binding var interval: Int
+    @Binding var unit: ScheduleIntervalUnit
+
+    var body: some View {
+        HStack {
+            Text("Every")
+            Spacer()
+            HStack(spacing: 8) {
+                Picker("", selection: $interval) {
+                    ForEach(1...30, id: \.self) { value in
+                        Text("\(value)").tag(value)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 60)
+
+                Picker("", selection: $unit) {
+                    ForEach(ScheduleIntervalUnit.allCases, id: \.self) { u in
+                        Text(interval == 1 ? String(u.displayName.dropLast()) : u.displayName).tag(u)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 80)
+            }
+        }
     }
 }
 
@@ -545,7 +722,11 @@ struct EditAccountView: View {
 
                 // Save password to Keychain on successful test
                 if !password.isEmpty {
-                    try? await KeychainService.shared.savePassword(password, for: account.id)
+                    do {
+                        try await KeychainService.shared.savePassword(password, for: account.id)
+                    } catch {
+                        logError("Failed to save password to Keychain: \(error.localizedDescription)")
+                    }
                 }
 
                 await MainActor.run {
@@ -1050,75 +1231,62 @@ struct RateLimitSettingsView: View {
 }
 
 struct AdvancedSettingsView: View {
-    @AppStorage("googleOAuthClientId") private var clientId = ""
-    @State private var showingClientIdHelp = false
+    @AppStorage("googleOAuthClientId") private var customClientId = ""
+    @State private var showCustomClientId = false
 
     var body: some View {
         Form {
-            Section("Google OAuth Configuration") {
+            Section("Google OAuth") {
                 HStack {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundStyle(.blue)
-                    Text("To use 'Sign in with Google' for Gmail accounts, you need to configure OAuth credentials from Google Cloud Console.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Sign in with Google is ready to use")
+                        .fontWeight(.medium)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Client ID")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField("Enter your Google OAuth Client ID", text: $clientId)
-                        .textFieldStyle(.roundedBorder)
-                        .help("Your Google Cloud OAuth 2.0 Client ID (e.g., 123456789-abc.apps.googleusercontent.com)")
-                }
-
-                if !clientId.isEmpty {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("OAuth configured")
-                            .foregroundStyle(.green)
-                    }
+                Text("Gmail accounts use secure OAuth authentication. Just click 'Sign in with Google' when adding a Gmail account.")
                     .font(.caption)
-                } else {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text("OAuth not configured - Gmail accounts will require App Passwords")
-                            .foregroundStyle(.orange)
-                    }
-                    .font(.caption)
-                }
-
-                Button("Setup Instructions") {
-                    showingClientIdHelp = true
-                }
-                .buttonStyle(.link)
+                    .foregroundStyle(.secondary)
             }
 
-            Section("How to Get a Client ID") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("1. Go to Google Cloud Console")
-                    Text("2. Create a new project or select existing")
-                    Text("3. Enable the Gmail API")
-                    Text("4. Go to Credentials → Create Credentials → OAuth Client ID")
-                    Text("5. Select 'macOS' as application type")
-                    Text("6. Copy the Client ID and paste it above")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Section {
+                DisclosureGroup("Use Custom OAuth Client ID", isExpanded: $showCustomClientId) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("For developers who want to use their own Google Cloud credentials.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                Link("Open Google Cloud Console",
-                     destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
-                    .font(.caption)
+                        TextField("Custom Client ID (optional)", text: $customClientId)
+                            .textFieldStyle(.roundedBorder)
+
+                        if !customClientId.isEmpty {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("Using custom Client ID")
+                                    .foregroundStyle(.green)
+                                Spacer()
+                                Button("Reset to Default") {
+                                    customClientId = ""
+                                }
+                                .buttonStyle(.link)
+                            }
+                            .font(.caption)
+                        }
+
+                        Link("Google Cloud Console",
+                             destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
+                            .font(.caption)
+                    }
+                    .padding(.top, 8)
+                }
             }
 
             Section {
                 HStack {
                     Image(systemName: "lock.shield.fill")
                         .foregroundStyle(.green)
-                    Text("Your credentials are stored locally on this device. OAuth tokens are stored securely in the macOS Keychain.")
+                    Text("OAuth tokens are stored securely in the macOS Keychain.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1126,56 +1294,6 @@ struct AdvancedSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
-        .sheet(isPresented: $showingClientIdHelp) {
-            OAuthSetupHelpView()
-        }
-    }
-}
-
-struct OAuthSetupHelpView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Setting Up Google OAuth")
-                    .font(.headline)
-                Spacer()
-                Button("Done") { dismiss() }
-            }
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Group {
-                        Text("Step 1: Create a Google Cloud Project")
-                            .font(.subheadline.bold())
-                        Text("Go to console.cloud.google.com and create a new project, or select an existing one.")
-
-                        Text("Step 2: Enable the Gmail API")
-                            .font(.subheadline.bold())
-                        Text("In your project, go to 'APIs & Services' → 'Library' and search for 'Gmail API'. Enable it.")
-
-                        Text("Step 3: Configure OAuth Consent Screen")
-                            .font(.subheadline.bold())
-                        Text("Go to 'OAuth consent screen' and configure it as 'External'. Add the required scopes: 'email', 'profile', and 'https://mail.google.com/'.")
-
-                        Text("Step 4: Create OAuth Credentials")
-                            .font(.subheadline.bold())
-                        Text("Go to 'Credentials' → 'Create Credentials' → 'OAuth client ID'. Select 'macOS' as the application type. Use 'com.kzahedi.MailKeep' as the bundle ID.")
-
-                        Text("Step 5: Copy the Client ID")
-                            .font(.subheadline.bold())
-                        Text("Copy the generated Client ID (looks like: 123456789-abc.apps.googleusercontent.com) and paste it in the Advanced settings.")
-                    }
-                    .font(.body)
-                }
-            }
-
-            Link("Open Google Cloud Console",
-                 destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
-        }
-        .padding()
-        .frame(width: 500, height: 400)
     }
 }
 

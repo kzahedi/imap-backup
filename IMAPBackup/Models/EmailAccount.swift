@@ -1,5 +1,47 @@
 import Foundation
 
+// MARK: - Secure Password Handling
+
+/// A container for temporarily holding a password during account operations.
+/// The password is automatically cleared when `clear()` is called.
+/// This prevents passwords from lingering in memory after they're no longer needed.
+final class TemporaryPassword {
+    private var bytes: [UInt8]
+
+    init(_ password: String?) {
+        if let password = password, !password.isEmpty {
+            self.bytes = Array(password.utf8)
+        } else {
+            self.bytes = []
+        }
+    }
+
+    /// Get the password string. Returns nil if cleared or never set.
+    var value: String? {
+        guard !bytes.isEmpty else { return nil }
+        return String(bytes: bytes, encoding: .utf8)
+    }
+
+    /// Check if a password is stored
+    var hasValue: Bool {
+        !bytes.isEmpty
+    }
+
+    /// Securely clear the stored password by zeroing memory
+    func clear() {
+        for i in 0..<bytes.count {
+            bytes[i] = 0
+        }
+        bytes.removeAll()
+    }
+
+    deinit {
+        clear()
+    }
+}
+
+// MARK: - Authentication Type
+
 /// Authentication type for email accounts
 enum AuthenticationType: String, Codable {
     case password = "password"
@@ -19,7 +61,26 @@ struct EmailAccount: Identifiable, Codable, Hashable {
 
     // Password is stored in Keychain, not in this struct
     // This property is only used during account creation/update
+    // SECURITY: Call clearTemporaryPassword() after saving to Keychain
     private var _password: String?
+
+    /// Clear the temporary password from memory after it's been saved to Keychain.
+    /// This should be called immediately after the password is persisted.
+    mutating func clearTemporaryPassword() {
+        _password = nil
+    }
+
+    /// Check if there's a temporary password that needs to be saved
+    var hasTemporaryPassword: Bool {
+        _password != nil && !_password!.isEmpty
+    }
+
+    /// Get and consume the temporary password (returns it once, then clears)
+    mutating func consumeTemporaryPassword() -> String? {
+        guard let password = _password else { return nil }
+        _password = nil
+        return password
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, email, imapServer, port, username, useSSL, isEnabled, lastBackupDate, authType

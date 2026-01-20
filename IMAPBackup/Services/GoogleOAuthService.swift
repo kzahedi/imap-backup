@@ -1,5 +1,6 @@
 import Foundation
 import AuthenticationServices
+import CryptoKit
 
 /// OAuth2 tokens for Google authentication
 struct GoogleOAuthTokens: Codable {
@@ -22,13 +23,16 @@ final class GoogleOAuthService: NSObject {
 
     // MARK: - Configuration
 
-    /// OAuth2 configuration - User must set these from Google Cloud Console
+    /// OAuth2 configuration
     struct Configuration {
         let clientId: String
         let redirectUri: String
 
+        /// Bundled default Client ID - users don't need to configure anything
+        static let defaultClientId = "1079034013731-bvfhnmdehe1925sk8uitu34rbu1gh81g.apps.googleusercontent.com"
+
         /// Google's OAuth2 endpoints
-        static let authorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
+        static let authorizationEndpoint = "https://accounts.google.com/o/oauth2/auth"
         static let tokenEndpoint = "https://oauth2.googleapis.com/token"
 
         /// Required scopes for IMAP access
@@ -45,6 +49,9 @@ final class GoogleOAuthService: NSObject {
     private var authSession: ASWebAuthenticationSession?
     private var presentationContextProvider: PresentationContextProvider?
 
+    /// PKCE code verifier - stored during OAuth flow for token exchange
+    private var codeVerifier: String?
+
     // MARK: - Initialization
 
     private override init() {
@@ -53,11 +60,15 @@ final class GoogleOAuthService: NSObject {
 
     // MARK: - Configuration Management
 
-    /// Load OAuth configuration from stored settings
+    /// Load OAuth configuration - uses bundled default Client ID, or user override if set
     func loadConfiguration() -> Configuration? {
-        guard let clientId = UserDefaults.standard.string(forKey: "googleOAuthClientId"),
-              !clientId.isEmpty else {
-            return nil
+        // Use user-configured Client ID if set, otherwise use bundled default
+        let clientId: String
+        if let userClientId = UserDefaults.standard.string(forKey: "googleOAuthClientId"),
+           !userClientId.isEmpty {
+            clientId = userClientId
+        } else {
+            clientId = Configuration.defaultClientId
         }
 
         // Redirect URI uses the reversed client ID as URL scheme
@@ -72,9 +83,9 @@ final class GoogleOAuthService: NSObject {
         UserDefaults.standard.set(clientId, forKey: "googleOAuthClientId")
     }
 
-    /// Check if OAuth is configured
+    /// Check if OAuth is configured - always true since we have a bundled default Client ID
     var isConfigured: Bool {
-        loadConfiguration() != nil
+        true
     }
 
     // MARK: - OAuth Flow
@@ -88,8 +99,12 @@ final class GoogleOAuthService: NSObject {
 
         currentConfiguration = config
 
-        // Build authorization URL
-        let authURL = buildAuthorizationURL(config: config)
+        // Generate PKCE code verifier and challenge
+        codeVerifier = generateCodeVerifier()
+        let codeChallenge = generateCodeChallenge(from: codeVerifier!)
+
+        // Build authorization URL with PKCE
+        let authURL = buildAuthorizationURL(config: config, codeChallenge: codeChallenge)
 
         // Present authentication session
         let callbackURL = try await presentAuthSession(url: authURL, callbackScheme: getCallbackScheme(config: config))
@@ -173,7 +188,7 @@ final class GoogleOAuthService: NSObject {
 
     // MARK: - Private Helpers
 
-    private func buildAuthorizationURL(config: Configuration) -> URL {
+    private func buildAuthorizationURL(config: Configuration, codeChallenge: String) -> URL {
         var components = URLComponents(string: Configuration.authorizationEndpoint)!
 
         components.queryItems = [
@@ -182,7 +197,10 @@ final class GoogleOAuthService: NSObject {
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "scope", value: Configuration.scopes.joined(separator: " ")),
             URLQueryItem(name: "access_type", value: "offline"),  // Get refresh token
-            URLQueryItem(name: "prompt", value: "consent")         // Always show consent screen for refresh token
+            URLQueryItem(name: "prompt", value: "consent"),        // Always show consent screen for refresh token
+            // PKCE parameters for enhanced security
+            URLQueryItem(name: "code_challenge", value: codeChallenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
 
         return components.url!
@@ -254,12 +272,18 @@ final class GoogleOAuthService: NSObject {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let body = [
+        var body = [
             "client_id": config.clientId,
             "code": code,
             "redirect_uri": config.redirectUri,
             "grant_type": "authorization_code"
         ]
+
+        // Include PKCE code_verifier for token exchange
+        if let verifier = codeVerifier {
+            body["code_verifier"] = verifier
+        }
+
         request.httpBody = body.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }
             .joined(separator: "&")
             .data(using: .utf8)
@@ -291,6 +315,30 @@ final class GoogleOAuthService: NSObject {
             tokenType: tokenResponse.token_type,
             scope: tokenResponse.scope ?? Configuration.scopes.joined(separator: " ")
         )
+    }
+
+    // MARK: - PKCE (Proof Key for Code Exchange)
+
+    /// Generate a cryptographically random code verifier for PKCE
+    /// Per RFC 7636: 43-128 characters from [A-Z, a-z, 0-9, "-", ".", "_", "~"]
+    private func generateCodeVerifier() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    /// Generate code challenge from code verifier using SHA256
+    /// Per RFC 7636: code_challenge = BASE64URL(SHA256(code_verifier))
+    private func generateCodeChallenge(from verifier: String) -> String {
+        let verifierData = Data(verifier.utf8)
+        let hash = SHA256.hash(data: verifierData)
+        return Data(hash).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     // MARK: - Token Response
