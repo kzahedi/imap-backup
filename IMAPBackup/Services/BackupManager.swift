@@ -464,7 +464,7 @@ class BackupManager: ObservableObject {
     func cancelBackup(for accountId: UUID) {
         activeTasks[accountId]?.cancel()
         activeTasks.removeValue(forKey: accountId)
-        progress[accountId]?.status = .cancelled
+        updateProgress(for: accountId) { $0.status = .cancelled }
 
         // Mark history entry as cancelled
         if let historyId = activeHistoryIds[accountId] {
@@ -478,7 +478,7 @@ class BackupManager: ObservableObject {
     func cancelAllBackups() {
         for (id, task) in activeTasks {
             task.cancel()
-            progress[id]?.status = .cancelled
+            updateProgress(for: id) { $0.status = .cancelled }
 
             // Mark history entry as cancelled
             if let historyId = activeHistoryIds[id] {
