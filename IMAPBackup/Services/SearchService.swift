@@ -154,61 +154,71 @@ actor SearchService {
         return results.sorted { $0.date > $1.date }
     }
 
-    /// Get list of available accounts for filter UI
-    func getAvailableAccounts() -> [String] {
-        let fileManager = FileManager.default
+    /// Get list of available accounts for filter UI (runs on background thread)
+    func getAvailableAccounts() async -> [String] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let fileManager = FileManager.default
 
-        guard fileManager.fileExists(atPath: backupLocation.path) else {
-            return []
-        }
+                guard fileManager.fileExists(atPath: self.backupLocation.path) else {
+                    continuation.resume(returning: [])
+                    return
+                }
 
-        do {
-            let contents = try fileManager.contentsOfDirectory(at: backupLocation, includingPropertiesForKeys: [.isDirectoryKey])
-            return contents
-                .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-                .map { $0.lastPathComponent }
-                .sorted()
-        } catch {
-            return []
-        }
-    }
-
-    /// Get list of available folders for a specific account (or all accounts)
-    func getAvailableFolders(forAccount account: String? = nil) -> [String] {
-        let fileManager = FileManager.default
-        var folders = Set<String>()
-
-        guard fileManager.fileExists(atPath: backupLocation.path) else {
-            return []
-        }
-
-        let searchRoot: URL
-        if let account = account {
-            searchRoot = backupLocation.appendingPathComponent(account)
-        } else {
-            searchRoot = backupLocation
-        }
-
-        guard let enumerator = fileManager.enumerator(
-            at: searchRoot,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-
-        while let url = enumerator.nextObject() as? URL {
-            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                // Check if this folder contains .eml files
-                if let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil),
-                   contents.contains(where: { $0.pathExtension == "eml" }) {
-                    let folderName = url.lastPathComponent
-                    folders.insert(folderName)
+                do {
+                    let contents = try fileManager.contentsOfDirectory(at: self.backupLocation, includingPropertiesForKeys: [.isDirectoryKey])
+                    let accounts = contents
+                        .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+                        .map { $0.lastPathComponent }
+                        .sorted()
+                    continuation.resume(returning: accounts)
+                } catch {
+                    continuation.resume(returning: [])
                 }
             }
         }
+    }
 
-        return folders.sorted()
+    /// Get list of available folders for a specific account (or all accounts) - runs on background thread
+    func getAvailableFolders(forAccount account: String? = nil) async -> [String] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let fileManager = FileManager.default
+                var folders = Set<String>()
+
+                guard fileManager.fileExists(atPath: self.backupLocation.path) else {
+                    continuation.resume(returning: [])
+                    return
+                }
+
+                let searchRoot: URL
+                if let account = account {
+                    searchRoot = self.backupLocation.appendingPathComponent(account)
+                } else {
+                    searchRoot = self.backupLocation
+                }
+
+                guard let enumerator = fileManager.enumerator(
+                    at: searchRoot,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
+                ) else {
+                    continuation.resume(returning: [])
+                    return
+                }
+
+                // Only get top-level folders, not all descendants
+                while let url = enumerator.nextObject() as? URL {
+                    if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                        let folderName = url.lastPathComponent
+                        // Add common folder names without checking for .eml files (faster)
+                        folders.insert(folderName)
+                    }
+                }
+
+                continuation.resume(returning: folders.sorted())
+            }
+        }
     }
 
     /// Reindex all - this is a no-op for file-based search

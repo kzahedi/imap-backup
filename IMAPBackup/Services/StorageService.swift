@@ -90,46 +90,53 @@ actor StorageService {
 
     /// Validate and repair all UID caches at startup
     /// Returns the number of caches that were repaired
-    func validateAndRepairAllCaches() -> Int {
-        var repairedCount = 0
+    /// Runs heavy file operations on background queue to avoid blocking
+    func validateAndRepairAllCaches() async -> Int {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                var repairedCount = 0
 
-        guard fileManager.fileExists(atPath: baseURL.path) else {
-            return 0
-        }
-
-        // Find all directories that contain .eml files
-        guard let enumerator = fileManager.enumerator(
-            at: baseURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return 0
-        }
-
-        var foldersToCheck: [URL] = []
-
-        while let fileURL = enumerator.nextObject() as? URL {
-            if fileURL.pathExtension == "eml" {
-                let folderURL = fileURL.deletingLastPathComponent()
-                if !foldersToCheck.contains(folderURL) {
-                    foldersToCheck.append(folderURL)
+                guard self.fileManager.fileExists(atPath: self.baseURL.path) else {
+                    continuation.resume(returning: 0)
+                    return
                 }
+
+                // Find all directories that contain .eml files
+                guard let enumerator = self.fileManager.enumerator(
+                    at: self.baseURL,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) else {
+                    continuation.resume(returning: 0)
+                    return
+                }
+
+                var foldersToCheck: [URL] = []
+
+                while let fileURL = enumerator.nextObject() as? URL {
+                    if fileURL.pathExtension == "eml" {
+                        let folderURL = fileURL.deletingLastPathComponent()
+                        if !foldersToCheck.contains(folderURL) {
+                            foldersToCheck.append(folderURL)
+                        }
+                    }
+                }
+
+                // Check and repair each folder's cache
+                for folderURL in foldersToCheck {
+                    if self.validateAndRepairCacheSync(for: folderURL) {
+                        repairedCount += 1
+                    }
+                }
+
+                continuation.resume(returning: repairedCount)
             }
         }
-
-        // Check and repair each folder's cache
-        for folderURL in foldersToCheck {
-            if validateAndRepairCache(for: folderURL) {
-                repairedCount += 1
-            }
-        }
-
-        return repairedCount
     }
 
-    /// Validate and repair cache for a single folder
+    /// Validate and repair cache for a single folder (sync version for background queue)
     /// Returns true if cache was repaired
-    private func validateAndRepairCache(for folderURL: URL) -> Bool {
+    private func validateAndRepairCacheSync(for folderURL: URL) -> Bool {
         let cacheURL = uidCacheURL(for: folderURL)
 
         // Get actual UIDs from .eml files
