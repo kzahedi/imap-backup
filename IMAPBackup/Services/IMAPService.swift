@@ -376,9 +376,11 @@ actor IMAPService {
     }
 
     func selectFolder(_ folder: String) async throws -> FolderStatus {
-        let escapedFolder = folder.replacingOccurrences(of: "\"", with: "\\\"")
+        // Encode folder name to IMAP modified UTF-7 for the server
+        let encodedFolder = folder.encodingIMAPUTF7()
+        let escapedFolder = encodedFolder.replacingOccurrences(of: "\"", with: "\\\"")
         let response = try await sendCommand("SELECT \"\(escapedFolder)\"")
-        currentFolder = folder  // Track for reconnection
+        currentFolder = folder  // Track for reconnection (store decoded name)
         return parseFolderStatus(response)
     }
 
@@ -789,7 +791,10 @@ actor IMAPService {
 
         let flags = String(line[flagsRange])
         let delimiter = String(line[delimiterRange])
-        let name = String(line[nameRange])
+        let rawName = String(line[nameRange])
+
+        // Decode IMAP modified UTF-7 encoding (RFC 3501)
+        let name = rawName.decodingIMAPUTF7()
 
         return IMAPFolder(
             name: name,
@@ -966,5 +971,110 @@ enum IMAPError: LocalizedError {
         case .fetchFailed(let reason):
             return "Failed to fetch email: \(reason)"
         }
+    }
+}
+
+// MARK: - IMAP Modified UTF-7 Decoding (RFC 3501)
+
+extension String {
+    /// Decode IMAP modified UTF-7 encoding to UTF-8
+    /// IMAP uses a modified UTF-7 where:
+    /// - ASCII printable chars (except &) pass through unchanged
+    /// - "&" is encoded as "&-"
+    /// - Non-ASCII chars are encoded as "&" + modified base64 + "-"
+    /// - Modified base64 uses "," instead of "/" and encodes UTF-16BE
+    func decodingIMAPUTF7() -> String {
+        var result = ""
+        var i = startIndex
+
+        while i < endIndex {
+            let char = self[i]
+
+            if char == "&" {
+                // Start of encoded sequence
+                let nextIndex = index(after: i)
+                if nextIndex < endIndex && self[nextIndex] == "-" {
+                    // "&-" represents literal "&"
+                    result.append("&")
+                    i = index(after: nextIndex)
+                } else {
+                    // Find the end of the encoded sequence
+                    if let dashIndex = self[nextIndex...].firstIndex(of: "-") {
+                        let encodedPart = String(self[nextIndex..<dashIndex])
+                        // Convert from modified base64 to standard base64
+                        let standardBase64 = encodedPart.replacingOccurrences(of: ",", with: "/")
+                        // Add padding if needed
+                        let paddedBase64 = standardBase64.padding(toLength: ((standardBase64.count + 3) / 4) * 4,
+                                                                   withPad: "=",
+                                                                   startingAt: 0)
+                        // Decode base64 to UTF-16BE bytes
+                        if let data = Data(base64Encoded: paddedBase64) {
+                            // Convert UTF-16BE to String
+                            let utf16Codes = stride(from: 0, to: data.count, by: 2).compactMap { offset -> UInt16? in
+                                guard offset + 1 < data.count else { return nil }
+                                return UInt16(data[offset]) << 8 | UInt16(data[offset + 1])
+                            }
+                            if let decoded = String(utf16CodeUnits: utf16Codes, count: utf16Codes.count) as String? {
+                                result.append(decoded)
+                            }
+                        }
+                        i = index(after: dashIndex)
+                    } else {
+                        // Malformed, just append the character
+                        result.append(char)
+                        i = index(after: i)
+                    }
+                }
+            } else {
+                result.append(char)
+                i = index(after: i)
+            }
+        }
+
+        return result
+    }
+
+    /// Encode string to IMAP modified UTF-7
+    func encodingIMAPUTF7() -> String {
+        var result = ""
+        var nonAsciiBuffer: [UInt16] = []
+
+        func flushBuffer() {
+            guard !nonAsciiBuffer.isEmpty else { return }
+            // Convert UTF-16 to bytes (big-endian)
+            var bytes = Data()
+            for code in nonAsciiBuffer {
+                bytes.append(UInt8(code >> 8))
+                bytes.append(UInt8(code & 0xFF))
+            }
+            // Encode to base64 and convert to modified base64
+            var base64 = bytes.base64EncodedString()
+            // Remove padding
+            base64 = base64.replacingOccurrences(of: "=", with: "")
+            // Use "," instead of "/"
+            base64 = base64.replacingOccurrences(of: "/", with: ",")
+            result.append("&\(base64)-")
+            nonAsciiBuffer.removeAll()
+        }
+
+        for scalar in unicodeScalars {
+            if scalar.value >= 0x20 && scalar.value <= 0x7E {
+                // ASCII printable
+                flushBuffer()
+                if scalar == "&" {
+                    result.append("&-")
+                } else {
+                    result.append(Character(scalar))
+                }
+            } else {
+                // Non-ASCII, buffer for UTF-16 encoding
+                for code in Character(scalar).utf16 {
+                    nonAsciiBuffer.append(code)
+                }
+            }
+        }
+
+        flushBuffer()
+        return result
     }
 }
