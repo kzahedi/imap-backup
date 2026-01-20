@@ -106,16 +106,86 @@ actor SearchService {
 
     // MARK: - Private Methods
 
+    /// Maximum header size to read (32KB should be plenty for headers)
+    private let maxHeaderSize = 32 * 1024
+
     private func searchEmailFile(url: URL, searchTerms: [String]) -> SearchResult? {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            // Try other encodings
-            guard let data = try? Data(contentsOf: url),
-                  let content = String(data: data, encoding: .isoLatin1) else {
-                return nil
-            }
-            return searchEmailContent(content: content, url: url, searchTerms: searchTerms)
+        // Step 1: Read only headers first (memory efficient)
+        guard let handle = FileHandle(forReadingAtPath: url.path) else { return nil }
+        defer { try? handle.close() }
+
+        let headerData = handle.readData(ofLength: maxHeaderSize)
+        guard let headerContent = String(data: headerData, encoding: .utf8)
+              ?? String(data: headerData, encoding: .isoLatin1) else {
+            return nil
         }
-        return searchEmailContent(content: content, url: url, searchTerms: searchTerms)
+
+        // Extract headers portion (up to first blank line)
+        let headerEndPatterns = ["\r\n\r\n", "\n\n"]
+        var headers = headerContent
+        for pattern in headerEndPatterns {
+            if let range = headerContent.range(of: pattern) {
+                headers = String(headerContent[..<range.lowerBound])
+                break
+            }
+        }
+
+        // Parse headers
+        let (sender, senderEmail) = extractSender(from: headers)
+        let subject = extractHeader(named: "Subject", from: headers) ?? "No Subject"
+        let messageId = extractHeader(named: "Message-ID", from: headers) ?? UUID().uuidString
+        let date = extractDate(from: headers)
+        let (accountId, mailbox) = extractPathInfo(from: url)
+
+        let headersLower = headers.lowercased()
+        let subjectLower = subject.lowercased()
+        let senderLower = "\(sender) \(senderEmail)".lowercased()
+
+        // Step 2: Check headers first (fast path - no body read needed)
+        var allTermsInHeaders = true
+        var matchedInSender = false
+        var matchedInSubject = false
+
+        for term in searchTerms {
+            let inSender = senderLower.contains(term)
+            let inSubject = subjectLower.contains(term)
+
+            if inSender { matchedInSender = true }
+            if inSubject { matchedInSubject = true }
+
+            if !inSender && !inSubject && !headersLower.contains(term) {
+                allTermsInHeaders = false
+                break
+            }
+        }
+
+        if allTermsInHeaders {
+            // All terms found in headers - no need to read body
+            let matchType: SearchResult.MatchType = matchedInSender ? .sender : (matchedInSubject ? .subject : .body)
+            let snippetSource = matchedInSender ? senderLower : (matchedInSubject ? subject : headers)
+            return SearchResult(
+                accountId: accountId,
+                mailbox: mailbox,
+                messageId: messageId,
+                sender: sender,
+                senderEmail: senderEmail,
+                subject: subject,
+                date: date,
+                filePath: url.path,
+                matchType: matchType,
+                snippet: createSnippet(from: snippetSource, searchTerms: searchTerms)
+            )
+        }
+
+        // Step 3: Need to search body - read full file (slow path)
+        handle.seek(toFileOffset: 0)
+        guard let fullData = try? handle.readToEnd(),
+              let fullContent = String(data: fullData, encoding: .utf8)
+              ?? String(data: fullData, encoding: .isoLatin1) else {
+            return nil
+        }
+
+        return searchEmailContent(content: fullContent, url: url, searchTerms: searchTerms)
     }
 
     private func searchEmailContent(content: String, url: URL, searchTerms: [String]) -> SearchResult? {

@@ -757,8 +757,8 @@ class BackupManager: ObservableObject {
                         // Stream directly to disk
                         bytesDownloaded = try await imapService.streamEmailToFile(uid: uid, destinationURL: tempURL)
 
-                        // Move to final location
-                        try await storageService.finalizeStreamedFile(tempURL: tempURL, finalURL: finalURL)
+                        // Move to final location and update UID cache
+                        try await storageService.finalizeStreamedFile(tempURL: tempURL, finalURL: finalURL, uid: uid)
 
                         // Read headers from saved file for metadata
                         if let headerContent = await storageService.readEmailHeaders(at: finalURL) {

@@ -5,8 +5,87 @@ actor StorageService {
     private let baseURL: URL
     private let fileManager = FileManager.default
 
+    /// Cache file name for storing UIDs (hidden file)
+    private let uidCacheFilename = ".uid_cache"
+
     init(baseURL: URL) {
         self.baseURL = baseURL
+    }
+
+    // MARK: - UID Cache Management
+
+    /// Get the UID cache file URL for a folder
+    private func uidCacheURL(for folderURL: URL) -> URL {
+        folderURL.appendingPathComponent(uidCacheFilename)
+    }
+
+    /// Append a UID to the cache file
+    private func appendUIDToCache(_ uid: UInt32, folderURL: URL) {
+        let cacheURL = uidCacheURL(for: folderURL)
+        let line = "\(uid)\n"
+
+        if let data = line.data(using: .utf8) {
+            if fileManager.fileExists(atPath: cacheURL.path) {
+                // Append to existing file
+                if let handle = try? FileHandle(forWritingTo: cacheURL) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    try? handle.close()
+                }
+            } else {
+                // Create new file
+                try? data.write(to: cacheURL)
+            }
+        }
+    }
+
+    /// Read UIDs from cache file (O(1) file read instead of O(n) directory scan)
+    private func readUIDsFromCache(folderURL: URL) -> Set<UInt32>? {
+        let cacheURL = uidCacheURL(for: folderURL)
+
+        guard let content = try? String(contentsOf: cacheURL, encoding: .utf8) else {
+            return nil
+        }
+
+        var uids = Set<UInt32>()
+        for line in content.components(separatedBy: .newlines) {
+            if let uid = UInt32(line.trimmingCharacters(in: .whitespaces)) {
+                uids.insert(uid)
+            }
+        }
+        return uids
+    }
+
+    /// Rebuild UID cache from existing files (migration for existing backups)
+    func rebuildUIDCache(accountEmail: String, folderPath: String) throws {
+        let sanitizedEmail = accountEmail.sanitizedForFilename()
+        let sanitizedPath = folderPath
+            .components(separatedBy: "/")
+            .map { $0.sanitizedForFilename() }
+            .joined(separator: "/")
+
+        let folderURL = baseURL
+            .appendingPathComponent(sanitizedEmail)
+            .appendingPathComponent(sanitizedPath)
+
+        guard fileManager.fileExists(atPath: folderURL.path) else { return }
+
+        // Scan files and build cache
+        let contents = try fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+        var uids: [UInt32] = []
+
+        for fileURL in contents where fileURL.pathExtension == "eml" {
+            let filename = fileURL.deletingPathExtension().lastPathComponent
+            if let firstUnderscore = filename.firstIndex(of: "_"),
+               let uid = UInt32(filename[..<firstUnderscore]) {
+                uids.append(uid)
+            }
+        }
+
+        // Write cache file
+        let cacheURL = uidCacheURL(for: folderURL)
+        let content = uids.map { String($0) }.joined(separator: "\n") + (uids.isEmpty ? "" : "\n")
+        try content.write(to: cacheURL, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Directory Management
@@ -58,6 +137,9 @@ actor StorageService {
         try emailData.write(to: tempURL)
         try fileManager.moveItem(at: tempURL, to: finalURL)
 
+        // Append UID to cache for O(1) lookup on next backup
+        appendUIDToCache(email.uid, folderURL: folderURL)
+
         return finalURL
     }
 
@@ -72,11 +154,17 @@ actor StorageService {
     }
 
     /// Finalize a streamed file by moving from temp to final location
-    func finalizeStreamedFile(tempURL: URL, finalURL: URL) throws {
+    func finalizeStreamedFile(tempURL: URL, finalURL: URL, uid: UInt32? = nil) throws {
         if fileManager.fileExists(atPath: finalURL.path) {
             try fileManager.removeItem(at: finalURL)
         }
         try fileManager.moveItem(at: tempURL, to: finalURL)
+
+        // Append UID to cache for O(1) lookup on next backup
+        if let uid = uid {
+            let folderURL = finalURL.deletingLastPathComponent()
+            appendUIDToCache(uid, folderURL: folderURL)
+        }
     }
 
     /// Read headers from a saved .eml file for metadata extraction
@@ -126,8 +214,8 @@ actor StorageService {
 
     // MARK: - Query Methods
 
-    /// Get UIDs of already downloaded emails by scanning filenames
-    /// Filename format: <UID>_<timestamp>_<sender>.eml
+    /// Get UIDs of already downloaded emails
+    /// Uses cache file for O(1) lookup, falls back to O(n) file scan if cache missing
     func getExistingUIDs(accountEmail: String, folderPath: String) throws -> Set<UInt32> {
         let sanitizedEmail = accountEmail.sanitizedForFilename()
         let sanitizedPath = folderPath
@@ -143,6 +231,12 @@ actor StorageService {
             return []
         }
 
+        // Try to read from cache first (fast path)
+        if let cachedUIDs = readUIDsFromCache(folderURL: folderURL) {
+            return cachedUIDs
+        }
+
+        // Cache miss - fall back to file scan (slow path, builds cache)
         let contents = try fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
         var uids = Set<UInt32>()
 
@@ -154,6 +248,11 @@ actor StorageService {
                 uids.insert(uid)
             }
         }
+
+        // Build cache for next time
+        let cacheURL = uidCacheURL(for: folderURL)
+        let content = uids.map { String($0) }.joined(separator: "\n") + (uids.isEmpty ? "" : "\n")
+        try? content.write(to: cacheURL, atomically: true, encoding: .utf8)
 
         return uids
     }
