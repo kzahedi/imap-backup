@@ -189,7 +189,14 @@ class BackupManager: ObservableObject {
 
     // MARK: - Account Management
 
-    func addAccount(_ account: EmailAccount, password: String?) {
+    @discardableResult
+    func addAccount(_ account: EmailAccount, password: String?) -> Bool {
+        // Check for duplicate email address
+        if accounts.contains(where: { $0.email.lowercased() == account.email.lowercased() }) {
+            logError("Account with email \(account.email) already exists")
+            return false
+        }
+
         var mutableAccount = account
         accounts.append(mutableAccount)
         saveAccounts()
@@ -212,6 +219,8 @@ class BackupManager: ObservableObject {
         if let index = accounts.firstIndex(where: { $0.id == account.id }) {
             accounts[index].clearTemporaryPassword()
         }
+
+        return true
     }
 
     func removeAccount(_ account: EmailAccount) {
@@ -759,6 +768,15 @@ class BackupManager: ObservableObject {
                         // Move to final location and update UID cache
                         try await storageService.finalizeStreamedFile(tempURL: tempURL, finalURL: finalURL, uid: uid)
 
+                        // Check for moved emails (deduplication)
+                        let dupResult = await storageService.checkAndHandleDuplicate(
+                            newFileURL: finalURL,
+                            accountEmail: account.email
+                        )
+                        if dupResult.isDuplicate, let movedFrom = dupResult.movedFrom {
+                            logDebug("Detected moved email: \(movedFrom.lastPathComponent) -> \(finalURL.lastPathComponent)")
+                        }
+
                         // Read headers from saved file for metadata
                         if let headerContent = await storageService.readEmailHeaders(at: finalURL) {
                             if let headerData = headerContent.data(using: .utf8) {
@@ -830,6 +848,15 @@ class BackupManager: ObservableObject {
                             accountEmail: account.email,
                             folderPath: folder.path
                         )
+
+                        // Check for moved emails (deduplication)
+                        let dupResult = await storageService.checkAndHandleDuplicate(
+                            newFileURL: savedURL,
+                            accountEmail: account.email
+                        )
+                        if dupResult.isDuplicate, let movedFrom = dupResult.movedFrom {
+                            logDebug("Detected moved email: \(movedFrom.lastPathComponent) -> \(savedURL.lastPathComponent)")
+                        }
 
                         // Extract attachments if enabled
                         if AttachmentExtractionManager.shared.settings.isEnabled {

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Service for storing emails and attachments to disk
 actor StorageService {
@@ -7,6 +8,12 @@ actor StorageService {
 
     /// Cache file name for storing UIDs (hidden file)
     private let uidCacheFilename = ".uid_cache"
+
+    /// Cache file name for storing content hashes (hidden file)
+    private let hashIndexFilename = ".hash_index"
+
+    /// Size of content to hash for deduplication (64KB)
+    private let hashContentSize = 64 * 1024
 
     init(baseURL: URL) {
         self.baseURL = baseURL
@@ -167,6 +174,174 @@ actor StorageService {
         try? content.write(to: cacheURL, atomically: true, encoding: .utf8)
 
         return true
+    }
+
+    // MARK: - Content Hash Management
+
+    /// Compute SHA256 hash of normalized email content (first 64KB)
+    /// Normalizes line endings to handle different systems
+    private func computeContentHash(at url: URL) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: url.path) else { return nil }
+        defer { try? handle.close() }
+
+        let data = handle.readData(ofLength: hashContentSize)
+        guard !data.isEmpty else { return nil }
+
+        // Normalize line endings: CRLF -> LF, CR -> LF
+        guard var content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) else {
+            // Binary content - hash as-is
+            let hash = SHA256.hash(data: data)
+            return hash.compactMap { String(format: "%02x", $0) }.joined()
+        }
+
+        content = content.replacingOccurrences(of: "\r\n", with: "\n")
+        content = content.replacingOccurrences(of: "\r", with: "\n")
+
+        guard let normalizedData = content.data(using: .utf8) else { return nil }
+        let hash = SHA256.hash(data: normalizedData)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Get the hash index file URL for a folder
+    private func hashIndexURL(for folderURL: URL) -> URL {
+        folderURL.appendingPathComponent(hashIndexFilename)
+    }
+
+    /// Read hash index from file: hash -> relative filename
+    private func readHashIndex(folderURL: URL) -> [String: String]? {
+        let indexURL = hashIndexURL(for: folderURL)
+
+        guard let content = try? String(contentsOf: indexURL, encoding: .utf8) else {
+            return nil
+        }
+
+        var index: [String: String] = [:]
+        for line in content.components(separatedBy: .newlines) {
+            let parts = line.components(separatedBy: "\t")
+            if parts.count == 2 {
+                index[parts[0]] = parts[1]
+            }
+        }
+        return index
+    }
+
+    /// Append a hash entry to the index file
+    private func appendHashToIndex(_ hash: String, filename: String, folderURL: URL) {
+        let indexURL = hashIndexURL(for: folderURL)
+        let line = "\(hash)\t\(filename)\n"
+
+        if let data = line.data(using: .utf8) {
+            if fileManager.fileExists(atPath: indexURL.path) {
+                if let handle = try? FileHandle(forWritingTo: indexURL) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    try? handle.close()
+                }
+            } else {
+                try? data.write(to: indexURL)
+            }
+        }
+    }
+
+    /// Find existing file with same content hash across all folders
+    /// Returns the URL of the existing file if found
+    func findExistingByHash(_ hash: String, accountEmail: String) -> URL? {
+        let sanitizedEmail = accountEmail.sanitizedForFilename()
+        let accountURL = baseURL.appendingPathComponent(sanitizedEmail)
+
+        guard fileManager.fileExists(atPath: accountURL.path) else { return nil }
+
+        // Search all subfolders for the hash
+        guard let enumerator = fileManager.enumerator(
+            at: accountURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        var foldersToCheck: Set<URL> = []
+        while let fileURL = enumerator.nextObject() as? URL {
+            if fileURL.pathExtension == "eml" {
+                foldersToCheck.insert(fileURL.deletingLastPathComponent())
+            }
+        }
+
+        for folderURL in foldersToCheck {
+            if let index = readHashIndex(folderURL: folderURL),
+               let filename = index[hash] {
+                let fileURL = folderURL.appendingPathComponent(filename)
+                if fileManager.fileExists(atPath: fileURL.path) {
+                    return fileURL
+                }
+            }
+        }
+
+        return nil
+    }
+
+    /// Check if a newly saved email is a duplicate (moved email) and handle it
+    /// Returns: (isDuplicate: Bool, movedFrom: URL?) - if duplicate, the original location
+    func checkAndHandleDuplicate(newFileURL: URL, accountEmail: String) -> (isDuplicate: Bool, movedFrom: URL?) {
+        guard let hash = computeContentHash(at: newFileURL) else {
+            return (false, nil)
+        }
+
+        // Check if this hash exists elsewhere
+        if let existingURL = findExistingByHash(hash, accountEmail: accountEmail),
+           existingURL != newFileURL {
+            // Found duplicate - this email was moved, not new
+            // Delete the newly downloaded copy and move the original
+            do {
+                // Remove the new download
+                try fileManager.removeItem(at: newFileURL)
+
+                // Move original to new location
+                try fileManager.moveItem(at: existingURL, to: newFileURL)
+
+                // Update hash index in new location
+                let newFolderURL = newFileURL.deletingLastPathComponent()
+                appendHashToIndex(hash, filename: newFileURL.lastPathComponent, folderURL: newFolderURL)
+
+                return (true, existingURL)
+            } catch {
+                // If move fails, keep the new download
+                let folderURL = newFileURL.deletingLastPathComponent()
+                appendHashToIndex(hash, filename: newFileURL.lastPathComponent, folderURL: folderURL)
+                return (false, nil)
+            }
+        }
+
+        // Not a duplicate - add to hash index
+        let folderURL = newFileURL.deletingLastPathComponent()
+        appendHashToIndex(hash, filename: newFileURL.lastPathComponent, folderURL: folderURL)
+        return (false, nil)
+    }
+
+    /// Rebuild hash index for a folder from existing .eml files
+    func rebuildHashIndex(accountEmail: String, folderPath: String) throws {
+        let sanitizedEmail = accountEmail.sanitizedForFilename()
+        let sanitizedPath = folderPath
+            .components(separatedBy: "/")
+            .map { $0.sanitizedForFilename() }
+            .joined(separator: "/")
+
+        let folderURL = baseURL
+            .appendingPathComponent(sanitizedEmail)
+            .appendingPathComponent(sanitizedPath)
+
+        guard fileManager.fileExists(atPath: folderURL.path) else { return }
+
+        let contents = try fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+        var hashEntries: [String] = []
+
+        for fileURL in contents where fileURL.pathExtension == "eml" {
+            if let hash = computeContentHash(at: fileURL) {
+                hashEntries.append("\(hash)\t\(fileURL.lastPathComponent)")
+            }
+        }
+
+        let indexURL = hashIndexURL(for: folderURL)
+        let content = hashEntries.joined(separator: "\n") + (hashEntries.isEmpty ? "" : "\n")
+        try content.write(to: indexURL, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Directory Management

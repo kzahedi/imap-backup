@@ -279,13 +279,19 @@ struct AddAccountView: View {
                     // Save OAuth tokens
                     try await account.saveOAuthTokens(tokens)
                     await MainActor.run {
-                        backupManager.addAccount(account, password: nil)
-                        dismiss()
+                        if backupManager.addAccount(account, password: nil) {
+                            dismiss()
+                        } else {
+                            testResult = .failure("An account with this email already exists")
+                        }
                     }
                 } else {
                     await MainActor.run {
-                        backupManager.addAccount(account, password: password)
-                        dismiss()
+                        if backupManager.addAccount(account, password: password) {
+                            dismiss()
+                        } else {
+                            testResult = .failure("An account with this email already exists")
+                        }
                     }
                 }
             } catch {
