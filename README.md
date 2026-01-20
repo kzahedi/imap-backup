@@ -42,6 +42,7 @@ A native macOS menubar app for backing up emails from IMAP servers. Keep your em
 - **Connection recovery** - Automatically reconnect on network failures
 - **Rate limiting** - Respect server limits with configurable throttling
 - **Retry with backoff** - Automatic retry on failures with exponential backoff
+- **Cache validation** - Automatic UID cache repair on startup
 - **Detailed error logging** - Debug issues with comprehensive logs
 
 ### User Interface
@@ -248,14 +249,15 @@ IMAPBackup/
 ├── Services/
 │   ├── BackupManager.swift     # Backup coordination, scheduling
 │   ├── IMAPService.swift       # IMAP protocol implementation
-│   ├── StorageService.swift    # File system operations
+│   ├── StorageService.swift    # File system operations, UID caching
 │   ├── EmailParser.swift       # RFC 2047/5322 parsing
 │   ├── SearchService.swift     # Full-text email search
 │   ├── AttachmentService.swift # MIME attachment extraction
 │   ├── RetentionService.swift  # Backup retention policies
 │   ├── VerificationService.swift # Backup verification
 │   ├── RateLimitService.swift  # Throttling and rate limiting
-│   └── LoggingService.swift    # Error and debug logging
+│   ├── LoggingService.swift    # Error and debug logging
+│   └── Constants.swift         # Centralized configuration values
 └── Views/
     ├── MainWindow/             # Account list, details, settings
     ├── MenubarView.swift       # Menubar dropdown
