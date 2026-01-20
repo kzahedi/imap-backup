@@ -10,12 +10,41 @@ struct SearchView: View {
     @State private var errorMessage: String?
     @State private var searchService: SearchService?
 
+    // Filter state
+    @State private var showFilters = false
+    @State private var selectedScope: SearchScope = .all
+    @State private var selectedAccounts: Set<String> = []
+    @State private var selectedFolders: Set<String> = []
+    @State private var startDate: Date?
+    @State private var endDate: Date?
+    @State private var useStartDate = false
+    @State private var useEndDate = false
+
+    // Available options for filters
+    @State private var availableAccounts: [String] = []
+    @State private var availableFolders: [String] = []
+
     @Environment(\.dismiss) private var dismiss
+
+    private var activeFilter: SearchFilter {
+        var filter = SearchFilter()
+        filter.scope = selectedScope
+        filter.accounts = selectedAccounts
+        filter.folders = selectedFolders
+        filter.startDate = useStartDate ? startDate : nil
+        filter.endDate = useEndDate ? endDate : nil
+        return filter
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             // Header with search field
             searchHeader
+
+            // Filter panel (collapsible)
+            if showFilters {
+                filterPanel
+            }
 
             Divider()
 
@@ -34,7 +63,7 @@ struct SearchView: View {
             // Footer with stats
             footerView
         }
-        .frame(minWidth: 600, minHeight: 400)
+        .frame(minWidth: 700, minHeight: 500)
         .task {
             await initializeSearchService()
         }
@@ -47,7 +76,7 @@ struct SearchView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField("Search emails by sender, subject, or content...", text: $searchText)
+            TextField("Search emails...", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.title3)
                 .onSubmit {
@@ -62,6 +91,19 @@ struct SearchView: View {
                 .buttonStyle(.plain)
             }
 
+            // Filter toggle button
+            Button(action: { withAnimation { showFilters.toggle() } }) {
+                HStack(spacing: 4) {
+                    Image(systemName: showFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    if activeFilter.hasActiveFilters {
+                        Text("Filters")
+                            .font(.caption)
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
+            .foregroundStyle(activeFilter.hasActiveFilters ? .blue : .secondary)
+
             Button("Search") {
                 Task { await performSearch() }
             }
@@ -70,6 +112,144 @@ struct SearchView: View {
         }
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    // MARK: - Filter Panel
+
+    var filterPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 20) {
+                // Search Scope
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Search In")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $selectedScope) {
+                        ForEach(SearchScope.allCases) { scope in
+                            Text(scope.rawValue).tag(scope)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 140)
+                }
+
+                // Account Filter
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Account")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Menu {
+                        Button("All Accounts") {
+                            selectedAccounts.removeAll()
+                        }
+                        Divider()
+                        ForEach(availableAccounts, id: \.self) { account in
+                            Button(action: {
+                                if selectedAccounts.contains(account) {
+                                    selectedAccounts.remove(account)
+                                } else {
+                                    selectedAccounts.insert(account)
+                                }
+                            }) {
+                                HStack {
+                                    Text(account)
+                                    Spacer()
+                                    if selectedAccounts.contains(account) {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text(selectedAccounts.isEmpty ? "All Accounts" : "\(selectedAccounts.count) selected")
+                            Image(systemName: "chevron.down")
+                        }
+                        .frame(minWidth: 120)
+                    }
+                }
+
+                // Folder Filter
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Folder")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Menu {
+                        Button("All Folders") {
+                            selectedFolders.removeAll()
+                        }
+                        Divider()
+                        ForEach(availableFolders, id: \.self) { folder in
+                            Button(action: {
+                                if selectedFolders.contains(folder) {
+                                    selectedFolders.remove(folder)
+                                } else {
+                                    selectedFolders.insert(folder)
+                                }
+                            }) {
+                                HStack {
+                                    Text(folder)
+                                    Spacer()
+                                    if selectedFolders.contains(folder) {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text(selectedFolders.isEmpty ? "All Folders" : "\(selectedFolders.count) selected")
+                            Image(systemName: "chevron.down")
+                        }
+                        .frame(minWidth: 120)
+                    }
+                }
+
+                Spacer()
+
+                // Clear filters button
+                if activeFilter.hasActiveFilters {
+                    Button("Clear Filters") {
+                        selectedScope = .all
+                        selectedAccounts.removeAll()
+                        selectedFolders.removeAll()
+                        useStartDate = false
+                        useEndDate = false
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.red)
+                }
+            }
+
+            // Date Range
+            HStack(spacing: 20) {
+                HStack(spacing: 8) {
+                    Toggle("From:", isOn: $useStartDate)
+                        .toggleStyle(.checkbox)
+                    DatePicker("", selection: Binding(
+                        get: { startDate ?? Date() },
+                        set: { startDate = $0 }
+                    ), displayedComponents: .date)
+                    .disabled(!useStartDate)
+                    .frame(width: 120)
+                }
+
+                HStack(spacing: 8) {
+                    Toggle("To:", isOn: $useEndDate)
+                        .toggleStyle(.checkbox)
+                    DatePicker("", selection: Binding(
+                        get: { endDate ?? Date() },
+                        set: { endDate = $0 }
+                    ), displayedComponents: .date)
+                    .disabled(!useEndDate)
+                    .frame(width: 120)
+                }
+
+                Spacer()
+            }
+        }
+        .padding()
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
     }
 
     // MARK: - Empty State
@@ -143,7 +323,19 @@ struct SearchView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if activeFilter.hasActiveFilters {
+                Text("(filtered)")
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+            }
+
             Spacer()
+
+            if selectedScope != .all {
+                Text("Scope: \(selectedScope.rawValue)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Text("\(emailCount) emails available")
                 .font(.caption)
@@ -169,6 +361,7 @@ struct SearchView: View {
         do {
             try await searchService?.open()
             await refreshStats()
+            await loadFilterOptions()
         } catch {
             await MainActor.run {
                 errorMessage = error.localizedDescription
@@ -187,6 +380,18 @@ struct SearchView: View {
         }
     }
 
+    private func loadFilterOptions() async {
+        guard let service = searchService else { return }
+
+        let accounts = await service.getAvailableAccounts()
+        let folders = await service.getAvailableFolders()
+
+        await MainActor.run {
+            availableAccounts = accounts
+            availableFolders = folders
+        }
+    }
+
     private func performSearch() async {
         guard !searchText.isEmpty, let service = searchService else { return }
 
@@ -196,7 +401,7 @@ struct SearchView: View {
         }
 
         do {
-            let results = try await service.search(query: searchText)
+            let results = try await service.search(query: searchText, filter: activeFilter)
             await MainActor.run {
                 searchResults = results
                 isSearching = false

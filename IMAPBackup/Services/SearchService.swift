@@ -1,6 +1,44 @@
 import Foundation
 import PDFKit
 
+/// Search scope options for filtering
+enum SearchScope: String, CaseIterable, Identifiable {
+    case all = "All Fields"
+    case subject = "Subject Only"
+    case sender = "From/Sender"
+    case recipient = "To/Recipient"
+    case body = "Body Only"
+    case attachments = "Attachments"
+
+    var id: String { rawValue }
+}
+
+/// Filter options for enhanced search
+struct SearchFilter {
+    /// Accounts to search (empty = all accounts)
+    var accounts: Set<String> = []
+
+    /// Folders to search (empty = all folders)
+    var folders: Set<String> = []
+
+    /// Search scope
+    var scope: SearchScope = .all
+
+    /// Start date for date range filter (nil = no start limit)
+    var startDate: Date?
+
+    /// End date for date range filter (nil = no end limit)
+    var endDate: Date?
+
+    /// Default filter (no restrictions)
+    static let `default` = SearchFilter()
+
+    /// Check if any filters are active
+    var hasActiveFilters: Bool {
+        !accounts.isEmpty || !folders.isEmpty || scope != .all || startDate != nil || endDate != nil
+    }
+}
+
 /// Search result from file-based search
 struct SearchResult: Identifiable {
     let id = UUID()
@@ -66,8 +104,8 @@ actor SearchService {
         return (emailCount, 0)
     }
 
-    /// Search emails by query string
-    func search(query: String, limit: Int = 100) throws -> [SearchResult] {
+    /// Search emails by query string with optional filters
+    func search(query: String, filter: SearchFilter = .default, limit: Int = 100) throws -> [SearchResult] {
         let searchTerms = query.lowercased().components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         guard !searchTerms.isEmpty else { return [] }
 
@@ -88,13 +126,89 @@ actor SearchService {
             guard url.pathExtension.lowercased() == "eml" else { continue }
             guard results.count < limit else { break }
 
-            if let result = searchEmailFile(url: url, searchTerms: searchTerms) {
+            // Apply account and folder filters before reading file
+            let (accountId, mailbox) = extractPathInfo(from: url)
+
+            if !filter.accounts.isEmpty && !filter.accounts.contains(accountId) {
+                continue
+            }
+
+            if !filter.folders.isEmpty && !filter.folders.contains(where: { mailbox.contains($0) }) {
+                continue
+            }
+
+            if let result = searchEmailFile(url: url, searchTerms: searchTerms, filter: filter) {
+                // Apply date filter
+                if let startDate = filter.startDate, result.date < startDate {
+                    continue
+                }
+                if let endDate = filter.endDate, result.date > endDate {
+                    continue
+                }
+
                 results.append(result)
             }
         }
 
         // Sort by date descending
         return results.sorted { $0.date > $1.date }
+    }
+
+    /// Get list of available accounts for filter UI
+    func getAvailableAccounts() -> [String] {
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: backupLocation.path) else {
+            return []
+        }
+
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: backupLocation, includingPropertiesForKeys: [.isDirectoryKey])
+            return contents
+                .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+                .map { $0.lastPathComponent }
+                .sorted()
+        } catch {
+            return []
+        }
+    }
+
+    /// Get list of available folders for a specific account (or all accounts)
+    func getAvailableFolders(forAccount account: String? = nil) -> [String] {
+        let fileManager = FileManager.default
+        var folders = Set<String>()
+
+        guard fileManager.fileExists(atPath: backupLocation.path) else {
+            return []
+        }
+
+        let searchRoot: URL
+        if let account = account {
+            searchRoot = backupLocation.appendingPathComponent(account)
+        } else {
+            searchRoot = backupLocation
+        }
+
+        guard let enumerator = fileManager.enumerator(
+            at: searchRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        while let url = enumerator.nextObject() as? URL {
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                // Check if this folder contains .eml files
+                if let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil),
+                   contents.contains(where: { $0.pathExtension == "eml" }) {
+                    let folderName = url.lastPathComponent
+                    folders.insert(folderName)
+                }
+            }
+        }
+
+        return folders.sorted()
     }
 
     /// Reindex all - this is a no-op for file-based search
@@ -109,7 +223,7 @@ actor SearchService {
     /// Maximum header size to read for search optimization
     private let maxHeaderSize = Constants.maxHeaderSizeForSearch
 
-    private func searchEmailFile(url: URL, searchTerms: [String]) -> SearchResult? {
+    private func searchEmailFile(url: URL, searchTerms: [String], filter: SearchFilter = .default) -> SearchResult? {
         // Step 1: Read only headers first (memory efficient)
         guard let handle = FileHandle(forReadingAtPath: url.path) else { return nil }
         defer { try? handle.close() }
@@ -136,56 +250,162 @@ actor SearchService {
         let messageId = extractHeader(named: "Message-ID", from: headers) ?? UUID().uuidString
         let date = extractDate(from: headers)
         let (accountId, mailbox) = extractPathInfo(from: url)
+        let recipient = extractHeader(named: "To", from: headers) ?? ""
 
-        let headersLower = headers.lowercased()
         let subjectLower = subject.lowercased()
         let senderLower = "\(sender) \(senderEmail)".lowercased()
+        let recipientLower = recipient.lowercased()
 
-        // Step 2: Check headers first (fast path - no body read needed)
-        var allTermsInHeaders = true
-        var matchedInSender = false
-        var matchedInSubject = false
+        // Apply scope-based search
+        switch filter.scope {
+        case .subject:
+            // Only search subject
+            for term in searchTerms {
+                if !subjectLower.contains(term) { return nil }
+            }
+            return SearchResult(
+                accountId: accountId, mailbox: mailbox, messageId: messageId,
+                sender: sender, senderEmail: senderEmail, subject: subject,
+                date: date, filePath: url.path, matchType: .subject,
+                snippet: createSnippet(from: subject, searchTerms: searchTerms)
+            )
 
-        for term in searchTerms {
-            let inSender = senderLower.contains(term)
-            let inSubject = subjectLower.contains(term)
+        case .sender:
+            // Only search sender
+            for term in searchTerms {
+                if !senderLower.contains(term) { return nil }
+            }
+            return SearchResult(
+                accountId: accountId, mailbox: mailbox, messageId: messageId,
+                sender: sender, senderEmail: senderEmail, subject: subject,
+                date: date, filePath: url.path, matchType: .sender,
+                snippet: createSnippet(from: "\(sender) <\(senderEmail)>", searchTerms: searchTerms)
+            )
 
-            if inSender { matchedInSender = true }
-            if inSubject { matchedInSubject = true }
+        case .recipient:
+            // Only search recipient
+            for term in searchTerms {
+                if !recipientLower.contains(term) { return nil }
+            }
+            return SearchResult(
+                accountId: accountId, mailbox: mailbox, messageId: messageId,
+                sender: sender, senderEmail: senderEmail, subject: subject,
+                date: date, filePath: url.path, matchType: .body,
+                snippet: createSnippet(from: "To: \(recipient)", searchTerms: searchTerms)
+            )
 
-            if !inSender && !inSubject && !headersLower.contains(term) {
-                allTermsInHeaders = false
-                break
+        case .body:
+            // Only search body - must read full content
+            handle.seek(toFileOffset: 0)
+            guard let fullData = try? handle.readToEnd(),
+                  let fullContent = String(data: fullData, encoding: .utf8)
+                  ?? String(data: fullData, encoding: .isoLatin1) else {
+                return nil
+            }
+            let body = extractBodyText(from: fullContent)
+            let bodyLower = body.lowercased()
+            for term in searchTerms {
+                if !bodyLower.contains(term) { return nil }
+            }
+            return SearchResult(
+                accountId: accountId, mailbox: mailbox, messageId: messageId,
+                sender: sender, senderEmail: senderEmail, subject: subject,
+                date: date, filePath: url.path, matchType: .body,
+                snippet: createSnippet(from: body, searchTerms: searchTerms)
+            )
+
+        case .attachments:
+            // Search for attachment filenames in Content-Disposition headers
+            handle.seek(toFileOffset: 0)
+            guard let fullData = try? handle.readToEnd(),
+                  let fullContent = String(data: fullData, encoding: .utf8)
+                  ?? String(data: fullData, encoding: .isoLatin1) else {
+                return nil
+            }
+            let attachmentNames = extractAttachmentNames(from: fullContent)
+            let attachmentText = attachmentNames.joined(separator: " ").lowercased()
+            for term in searchTerms {
+                if !attachmentText.contains(term) { return nil }
+            }
+            return SearchResult(
+                accountId: accountId, mailbox: mailbox, messageId: messageId,
+                sender: sender, senderEmail: senderEmail, subject: subject,
+                date: date, filePath: url.path, matchType: .attachment,
+                snippet: "Attachments: " + attachmentNames.joined(separator: ", ")
+            )
+
+        case .all:
+            // Search all fields (original behavior)
+            let headersLower = headers.lowercased()
+
+            // Step 2: Check headers first (fast path - no body read needed)
+            var allTermsInHeaders = true
+            var matchedInSender = false
+            var matchedInSubject = false
+
+            for term in searchTerms {
+                let inSender = senderLower.contains(term)
+                let inSubject = subjectLower.contains(term)
+
+                if inSender { matchedInSender = true }
+                if inSubject { matchedInSubject = true }
+
+                if !inSender && !inSubject && !headersLower.contains(term) {
+                    allTermsInHeaders = false
+                    break
+                }
+            }
+
+            if allTermsInHeaders {
+                // All terms found in headers - no need to read body
+                let matchType: SearchResult.MatchType = matchedInSender ? .sender : (matchedInSubject ? .subject : .body)
+                let snippetSource = matchedInSender ? senderLower : (matchedInSubject ? subject : headers)
+                return SearchResult(
+                    accountId: accountId,
+                    mailbox: mailbox,
+                    messageId: messageId,
+                    sender: sender,
+                    senderEmail: senderEmail,
+                    subject: subject,
+                    date: date,
+                    filePath: url.path,
+                    matchType: matchType,
+                    snippet: createSnippet(from: snippetSource, searchTerms: searchTerms)
+                )
+            }
+
+            // Step 3: Need to search body - read full file (slow path)
+            handle.seek(toFileOffset: 0)
+            guard let fullData = try? handle.readToEnd(),
+                  let fullContent = String(data: fullData, encoding: .utf8)
+                  ?? String(data: fullData, encoding: .isoLatin1) else {
+                return nil
+            }
+
+            return searchEmailContent(content: fullContent, url: url, searchTerms: searchTerms)
+        }
+    }
+
+    /// Extract attachment filenames from email content
+    private func extractAttachmentNames(from content: String) -> [String] {
+        var names: [String] = []
+
+        // Match Content-Disposition: attachment; filename="..."
+        let pattern = #"filename[*]?=(?:\"([^\"]+)\"|([^\s;]+))"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return names
+        }
+
+        let matches = regex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+        for match in matches {
+            if let range = Range(match.range(at: 1), in: content) {
+                names.append(String(content[range]))
+            } else if let range = Range(match.range(at: 2), in: content) {
+                names.append(String(content[range]))
             }
         }
 
-        if allTermsInHeaders {
-            // All terms found in headers - no need to read body
-            let matchType: SearchResult.MatchType = matchedInSender ? .sender : (matchedInSubject ? .subject : .body)
-            let snippetSource = matchedInSender ? senderLower : (matchedInSubject ? subject : headers)
-            return SearchResult(
-                accountId: accountId,
-                mailbox: mailbox,
-                messageId: messageId,
-                sender: sender,
-                senderEmail: senderEmail,
-                subject: subject,
-                date: date,
-                filePath: url.path,
-                matchType: matchType,
-                snippet: createSnippet(from: snippetSource, searchTerms: searchTerms)
-            )
-        }
-
-        // Step 3: Need to search body - read full file (slow path)
-        handle.seek(toFileOffset: 0)
-        guard let fullData = try? handle.readToEnd(),
-              let fullContent = String(data: fullData, encoding: .utf8)
-              ?? String(data: fullData, encoding: .isoLatin1) else {
-            return nil
-        }
-
-        return searchEmailContent(content: fullContent, url: url, searchTerms: searchTerms)
+        return names
     }
 
     private func searchEmailContent(content: String, url: URL, searchTerms: [String]) -> SearchResult? {
