@@ -33,6 +33,7 @@
 		B10000010000000000000019 /* BackupHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000019 /* BackupHistoryService.swift */; };
 		B1000001000000000000001A /* BackupHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001A /* BackupHistoryView.swift */; };
 		B1000001000000000000001B /* LoggingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001B /* LoggingService.swift */; };
+		B1000001000000000000002A /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000002A /* Constants.swift */; };
 		B1000001000000000000001C /* RetentionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001C /* RetentionService.swift */; };
 		B1000001000000000000001D /* RateLimitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001D /* RateLimitService.swift */; };
 		B1000001000000000000001E /* AttachmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001E /* AttachmentService.swift */; };
@@ -101,6 +102,7 @@
 		B10000020000000000000019 /* BackupHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryService.swift; sourceTree = "<group>"; };
 		B1000002000000000000001A /* BackupHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryView.swift; sourceTree = "<group>"; };
 		B1000002000000000000001B /* LoggingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoggingService.swift; sourceTree = "<group>"; };
+		B1000002000000000000002A /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		B1000002000000000000001C /* RetentionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetentionService.swift; sourceTree = "<group>"; };
 		B1000002000000000000001D /* RateLimitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateLimitService.swift; sourceTree = "<group>"; };
 		B1000002000000000000001E /* AttachmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentService.swift; sourceTree = "<group>"; };
@@ -240,6 +242,7 @@
 				B10000020000000000000017 /* NotificationService.swift */,
 				B10000020000000000000019 /* BackupHistoryService.swift */,
 				B1000002000000000000001B /* LoggingService.swift */,
+				B1000002000000000000002A /* Constants.swift */,
 				B1000002000000000000001C /* RetentionService.swift */,
 				B1000002000000000000001D /* RateLimitService.swift */,
 				B1000002000000000000001E /* AttachmentService.swift */,
@@ -455,6 +458,7 @@
 				B10000010000000000000019 /* BackupHistoryService.swift in Sources */,
 				B1000001000000000000001A /* BackupHistoryView.swift in Sources */,
 				B1000001000000000000001B /* LoggingService.swift in Sources */,
+				B1000001000000000000002A /* Constants.swift in Sources */,
 				B1000001000000000000001C /* RetentionService.swift in Sources */,
 				B1000001000000000000001D /* RateLimitService.swift in Sources */,
 				B1000001000000000000001E /* AttachmentService.swift in Sources */,

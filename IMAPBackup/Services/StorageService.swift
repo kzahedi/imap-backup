@@ -88,6 +88,80 @@ actor StorageService {
         try content.write(to: cacheURL, atomically: true, encoding: .utf8)
     }
 
+    /// Validate and repair all UID caches at startup
+    /// Returns the number of caches that were repaired
+    func validateAndRepairAllCaches() -> Int {
+        var repairedCount = 0
+
+        guard fileManager.fileExists(atPath: baseURL.path) else {
+            return 0
+        }
+
+        // Find all directories that contain .eml files
+        guard let enumerator = fileManager.enumerator(
+            at: baseURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        var foldersToCheck: [URL] = []
+
+        while let fileURL = enumerator.nextObject() as? URL {
+            if fileURL.pathExtension == "eml" {
+                let folderURL = fileURL.deletingLastPathComponent()
+                if !foldersToCheck.contains(folderURL) {
+                    foldersToCheck.append(folderURL)
+                }
+            }
+        }
+
+        // Check and repair each folder's cache
+        for folderURL in foldersToCheck {
+            if validateAndRepairCache(for: folderURL) {
+                repairedCount += 1
+            }
+        }
+
+        return repairedCount
+    }
+
+    /// Validate and repair cache for a single folder
+    /// Returns true if cache was repaired
+    private func validateAndRepairCache(for folderURL: URL) -> Bool {
+        let cacheURL = uidCacheURL(for: folderURL)
+
+        // Get actual UIDs from .eml files
+        guard let contents = try? fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil) else {
+            return false
+        }
+
+        var actualUIDs = Set<UInt32>()
+        for fileURL in contents where fileURL.pathExtension == "eml" {
+            let filename = fileURL.deletingPathExtension().lastPathComponent
+            if let firstUnderscore = filename.firstIndex(of: "_"),
+               let uid = UInt32(filename[..<firstUnderscore]) {
+                actualUIDs.insert(uid)
+            }
+        }
+
+        // Read cached UIDs
+        let cachedUIDs = readUIDsFromCache(folderURL: folderURL) ?? Set<UInt32>()
+
+        // Compare - if they match, no repair needed
+        if cachedUIDs == actualUIDs {
+            return false
+        }
+
+        // Mismatch detected - rebuild cache
+        let sortedUIDs = actualUIDs.sorted()
+        let content = sortedUIDs.map { String($0) }.joined(separator: "\n") + (sortedUIDs.isEmpty ? "" : "\n")
+        try? content.write(to: cacheURL, atomically: true, encoding: .utf8)
+
+        return true
+    }
+
     // MARK: - Directory Management
 
     func createAccountDirectory(email: String) throws -> URL {

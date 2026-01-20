@@ -5,6 +5,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // App initialization
         print("MailKeep started")
+
+        // Validate and repair UID caches in background
+        Task.detached(priority: .background) {
+            await self.validateUIDCaches()
+        }
+    }
+
+    /// Validate and repair UID caches on startup
+    private func validateUIDCaches() async {
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let backupURL = documentsURL.appendingPathComponent("IMAPBackup")
+
+        let storageService = StorageService(baseURL: backupURL)
+        let repairedCount = await storageService.validateAndRepairAllCaches()
+
+        if repairedCount > 0 {
+            print("MailKeep: Repaired \(repairedCount) UID cache(s) on startup")
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
