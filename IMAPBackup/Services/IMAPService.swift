@@ -196,6 +196,7 @@ actor IMAPService {
     // MARK: - Connection Management
 
     func connect() async throws {
+        trace("[DEBUG] connect() START for \(account.email)")
         trace("connect() START for \(account.email)")
         let host = NWEndpoint.Host(account.imapServer)
         let port = NWEndpoint.Port(integerLiteral: UInt16(account.port))
@@ -218,6 +219,7 @@ actor IMAPService {
 
                 switch connectionState {
                 case .ready:
+                    trace("[DEBUG] connect() READY")
                     trace("connect() READY")
                     state.hasResumed = true
                     Task { [weak self] in
@@ -260,7 +262,9 @@ actor IMAPService {
         trace("login() got greeting")
 
         // Check authentication type
+        trace("[DEBUG] login() authType=\(account.authType)")
         if account.authType == .oauth2 {
+            trace("[DEBUG] login() calling loginWithOAuth2()")
             try await loginWithOAuth2()
         } else {
             try await loginWithPassword(password: password)
@@ -309,30 +313,41 @@ actor IMAPService {
 
     /// Login with OAuth2 XOAUTH2 SASL mechanism
     private func loginWithOAuth2() async throws {
+        trace("[DEBUG] loginWithOAuth2() START for \(account.email)")
         // Get valid access token (refreshing if needed)
         let accessToken: String
         do {
+            trace("[DEBUG] Getting access token...")
             accessToken = try await account.getValidAccessToken()
+            trace("[DEBUG] Got access token (length: \(accessToken.count))")
         } catch {
+            trace("[DEBUG] Failed to get OAuth access token: \(error.localizedDescription)")
             logError("Failed to get OAuth access token: \(error.localizedDescription)")
             throw IMAPError.authenticationFailed
         }
 
         // Generate XOAUTH2 token
+        trace("[DEBUG] Generating XOAUTH2 token...")
         let xoauth2Token = GoogleOAuthService.generateXOAuth2Token(
             email: account.email,
             accessToken: accessToken
         )
+        trace("[DEBUG] XOAUTH2 token generated (length: \(xoauth2Token.count))")
 
         // First, check CAPABILITY to ensure XOAUTH2 is supported
+        trace("[DEBUG] Sending CAPABILITY command...")
         let capResponse = try await sendCommand("CAPABILITY")
+        trace("[DEBUG] CAPABILITY response: \(capResponse.prefix(200))")
         guard capResponse.uppercased().contains("AUTH=XOAUTH2") else {
+            trace("[DEBUG] Server does not support XOAUTH2!")
             logError("Server does not support XOAUTH2 authentication")
             throw IMAPError.authenticationFailed
         }
 
         // Send AUTHENTICATE XOAUTH2 command
+        trace("[DEBUG] Sending AUTHENTICATE XOAUTH2 command...")
         let response = try await sendCommand("AUTHENTICATE XOAUTH2 \(xoauth2Token)")
+        trace("[DEBUG] AUTHENTICATE response: \(response.prefix(200))")
 
         // Check for success (OK) or failure (NO/BAD)
         if response.contains(" NO ") || response.contains(" BAD ") {
@@ -683,15 +698,34 @@ actor IMAPService {
 
         // Read response until we get the tagged response
         trace("sendCommand: reading response...")
+        trace("[DEBUG] sendCommand: reading response for tag \(tag)...")
         var fullResponse = ""
         while true {
             let chunk = try await readResponse()
             fullResponse += chunk
             trace("sendCommand: got chunk \(chunk.count) chars")
+            trace("[DEBUG] sendCommand: got chunk: \(chunk.prefix(200))")
+
+            // Check for SASL continuation (+ response) - need to handle auth errors
+            if chunk.hasPrefix("+ ") || chunk.contains("\r\n+ ") {
+                trace("[DEBUG] sendCommand: got SASL continuation, sending empty response")
+                // Send empty response to complete SASL exchange
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    connection.send(content: "\r\n".data(using: .utf8), completion: .contentProcessed { error in
+                        if let error = error {
+                            continuation.resume(throwing: IMAPError.sendFailed(error.localizedDescription))
+                        } else {
+                            continuation.resume()
+                        }
+                    })
+                }
+                continue
+            }
 
             // Check if we have the complete tagged response
             if chunk.contains("\(tag) OK") || chunk.contains("\(tag) NO") || chunk.contains("\(tag) BAD") {
                 trace("sendCommand: got tagged response")
+                trace("[DEBUG] sendCommand: got tagged response")
                 break
             }
         }
