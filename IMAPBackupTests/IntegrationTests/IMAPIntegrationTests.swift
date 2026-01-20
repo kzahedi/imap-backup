@@ -23,10 +23,6 @@ import XCTest
 ///
 final class IMAPIntegrationTests: XCTestCase {
 
-    override func setUp() async throws {
-        throw XCTSkip("Integration test - requires real IMAP credentials. Set IMAP_TEST_* environment variables to run.")
-    }
-
     // MARK: - Test Account Configuration
 
     struct TestAccount {
