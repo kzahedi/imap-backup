@@ -181,6 +181,7 @@ struct EmailPreviewView: View {
     @State private var emailContent: String = ""
     @State private var isLoading = true
     @State private var headers: EmailHeaders?
+    @State private var attachments: [EmailAttachmentInfo] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -214,6 +215,12 @@ struct EmailPreviewView: View {
                         Text(email.date, format: .dateTime)
                     }
                     .font(.subheadline)
+                }
+
+                // Attachments
+                if !attachments.isEmpty {
+                    Divider()
+                    AttachmentsView(attachments: attachments, emailPath: email.filePath)
                 }
 
                 Divider()
@@ -277,9 +284,170 @@ struct EmailPreviewView: View {
         // Parse headers
         headers = parseHeaders(from: content)
 
+        // Parse attachments
+        attachments = parseAttachments(from: content)
+
+        // Check for extracted attachments folder
+        let emailURL = URL(fileURLWithPath: email.filePath)
+        let folderName = emailURL.deletingPathExtension().lastPathComponent + "_attachments"
+        let attachmentFolder = emailURL.deletingLastPathComponent().appendingPathComponent(folderName)
+
+        // Also check the older naming convention
+        let parts = emailURL.deletingPathExtension().lastPathComponent.components(separatedBy: "_")
+        if parts.count >= 3 {
+            let altFolderName = "\(parts[1])_\(parts[2])__\(parts.dropFirst(3).joined(separator: "_"))_attachments"
+            let altAttachmentFolder = emailURL.deletingLastPathComponent().appendingPathComponent(altFolderName)
+            if FileManager.default.fileExists(atPath: altAttachmentFolder.path) {
+                let extractedAttachments = loadExtractedAttachments(from: altAttachmentFolder)
+                attachments.append(contentsOf: extractedAttachments)
+            }
+        }
+
+        if FileManager.default.fileExists(atPath: attachmentFolder.path) {
+            let extractedAttachments = loadExtractedAttachments(from: attachmentFolder)
+            attachments.append(contentsOf: extractedAttachments)
+        }
+
         // Extract body (simplified - just show plain text portion)
         emailContent = extractBody(from: content)
         isLoading = false
+    }
+
+    private func loadExtractedAttachments(from folder: URL) -> [EmailAttachmentInfo] {
+        var result: [EmailAttachmentInfo] = []
+
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return result
+        }
+
+        for url in contents {
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            result.append(EmailAttachmentInfo(
+                filename: url.lastPathComponent,
+                mimeType: mimeType(for: url.pathExtension),
+                size: Int64(size),
+                isExtracted: true,
+                extractedPath: url.path
+            ))
+        }
+
+        return result
+    }
+
+    private func mimeType(for ext: String) -> String {
+        switch ext.lowercased() {
+        case "pdf": return "application/pdf"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "gif": return "image/gif"
+        case "doc": return "application/msword"
+        case "docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        case "xls": return "application/vnd.ms-excel"
+        case "xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        case "zip": return "application/zip"
+        case "txt": return "text/plain"
+        case "html", "htm": return "text/html"
+        default: return "application/octet-stream"
+        }
+    }
+
+    private func parseAttachments(from content: String) -> [EmailAttachmentInfo] {
+        var result: [EmailAttachmentInfo] = []
+
+        // Look for Content-Disposition: attachment patterns
+        let lines = content.components(separatedBy: .newlines)
+        var i = 0
+
+        while i < lines.count {
+            let line = lines[i].lowercased()
+
+            if line.contains("content-disposition:") && line.contains("attachment") {
+                var filename = ""
+                var contentType = "application/octet-stream"
+
+                // Check for filename in same line
+                if let filenameMatch = lines[i].range(of: "filename=\"", options: .caseInsensitive) ??
+                                       lines[i].range(of: "filename=", options: .caseInsensitive) {
+                    let afterFilename = lines[i][filenameMatch.upperBound...]
+                    if let endQuote = afterFilename.firstIndex(of: "\"") {
+                        filename = String(afterFilename[..<endQuote])
+                    } else if let endSemi = afterFilename.firstIndex(of: ";") {
+                        filename = String(afterFilename[..<endSemi])
+                    } else {
+                        filename = String(afterFilename).trimmingCharacters(in: .whitespaces)
+                    }
+                }
+
+                // Look backwards for Content-Type
+                for j in stride(from: i - 1, through: max(0, i - 5), by: -1) {
+                    if lines[j].lowercased().hasPrefix("content-type:") {
+                        contentType = String(lines[j].dropFirst(13)).trimmingCharacters(in: .whitespaces)
+                        if let semiIndex = contentType.firstIndex(of: ";") {
+                            contentType = String(contentType[..<semiIndex])
+                        }
+                        break
+                    }
+                }
+
+                if !filename.isEmpty {
+                    // Decode RFC 2047 encoded filename if needed
+                    let decodedFilename = decodeRFC2047(filename)
+                    result.append(EmailAttachmentInfo(
+                        filename: decodedFilename,
+                        mimeType: contentType,
+                        size: 0,  // Size not easily determinable from raw content
+                        isExtracted: false,
+                        extractedPath: nil
+                    ))
+                }
+            }
+
+            i += 1
+        }
+
+        return result
+    }
+
+    private func decodeRFC2047(_ text: String) -> String {
+        // Basic RFC 2047 decoding for common cases
+        var result = text
+
+        // Pattern: =?charset?encoding?encoded_text?=
+        let pattern = #"=\?([^?]+)\?([BbQq])\?([^?]+)\?="#
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let range = NSRange(result.startIndex..., in: result)
+            let matches = regex.matches(in: result, range: range)
+
+            for match in matches.reversed() {
+                guard let fullRange = Range(match.range, in: result),
+                      let encodingRange = Range(match.range(at: 2), in: result),
+                      let textRange = Range(match.range(at: 3), in: result) else { continue }
+
+                let encoding = result[encodingRange].uppercased()
+                let encodedText = String(result[textRange])
+
+                var decoded = encodedText
+                if encoding == "B" {
+                    // Base64
+                    if let data = Data(base64Encoded: encodedText),
+                       let str = String(data: data, encoding: .utf8) {
+                        decoded = str
+                    }
+                } else if encoding == "Q" {
+                    // Quoted-printable
+                    decoded = encodedText
+                        .replacingOccurrences(of: "_", with: " ")
+                        .replacingOccurrences(of: "=", with: "%")
+                    if let unescaped = decoded.removingPercentEncoding {
+                        decoded = unescaped
+                    }
+                }
+
+                result.replaceSubrange(fullRange, with: decoded)
+            }
+        }
+
+        return result
     }
 
     private func parseHeaders(from content: String) -> EmailHeaders {
@@ -360,6 +528,235 @@ struct EmailHeaders {
     let from: String
     let to: String
     let subject: String
+}
+
+// MARK: - Attachment Info
+
+struct EmailAttachmentInfo: Identifiable, Hashable {
+    let id = UUID()
+    let filename: String
+    let mimeType: String
+    let size: Int64
+    let isExtracted: Bool
+    let extractedPath: String?
+
+    var formattedSize: String {
+        size > 0 ? ByteCountFormatter.string(fromByteCount: size, countStyle: .file) : ""
+    }
+
+    var icon: String {
+        let ext = (filename as NSString).pathExtension.lowercased()
+        switch ext {
+        case "pdf": return "doc.fill"
+        case "jpg", "jpeg", "png", "gif", "heic", "webp": return "photo.fill"
+        case "doc", "docx": return "doc.text.fill"
+        case "xls", "xlsx": return "tablecells.fill"
+        case "ppt", "pptx": return "play.rectangle.fill"
+        case "zip", "rar", "7z", "tar", "gz": return "doc.zipper"
+        case "mp3", "wav", "m4a", "aac": return "music.note"
+        case "mp4", "mov", "avi", "mkv": return "video.fill"
+        case "txt": return "doc.plaintext"
+        case "html", "htm": return "globe"
+        default: return "doc.fill"
+        }
+    }
+}
+
+// MARK: - Attachments View
+
+struct AttachmentsView: View {
+    let attachments: [EmailAttachmentInfo]
+    let emailPath: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "paperclip")
+                    .foregroundStyle(.secondary)
+                Text("\(attachments.count) Attachment\(attachments.count == 1 ? "" : "s")")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(attachments) { attachment in
+                        AttachmentItemView(attachment: attachment, emailPath: emailPath)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct AttachmentItemView: View {
+    let attachment: EmailAttachmentInfo
+    let emailPath: String
+    @State private var isHovering = false
+    @State private var isSaving = false
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .frame(width: 80, height: 60)
+
+                Image(systemName: attachment.icon)
+                    .font(.title)
+                    .foregroundStyle(attachment.isExtracted ? .blue : .secondary)
+            }
+            .overlay(alignment: .topTrailing) {
+                if attachment.isExtracted {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .offset(x: 4, y: -4)
+                }
+            }
+
+            Text(attachment.filename)
+                .font(.caption)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(width: 80)
+
+            if !attachment.formattedSize.isEmpty {
+                Text(attachment.formattedSize)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isHovering ? Color(nsColor: .selectedControlColor).opacity(0.3) : Color.clear)
+        )
+        .onHover { hovering in
+            isHovering = hovering
+        }
+        .onTapGesture {
+            openAttachment()
+        }
+        .contextMenu {
+            if attachment.isExtracted {
+                Button("Open") {
+                    openAttachment()
+                }
+
+                Button("Show in Finder") {
+                    if let path = attachment.extractedPath {
+                        NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+                    }
+                }
+
+                Divider()
+
+                Button("Quick Look") {
+                    if let path = attachment.extractedPath {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                    }
+                }
+            } else {
+                Button("Save to Downloads...") {
+                    saveAttachment()
+                }
+
+                Button("Open Email in Mail") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: emailPath))
+                }
+            }
+        }
+    }
+
+    private func openAttachment() {
+        if attachment.isExtracted, let path = attachment.extractedPath {
+            NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        } else {
+            // Open the email file - Mail.app will show attachments
+            NSWorkspace.shared.open(URL(fileURLWithPath: emailPath))
+        }
+    }
+
+    private func saveAttachment() {
+        guard !attachment.isExtracted else { return }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = attachment.filename
+        panel.canCreateDirectories = true
+
+        if panel.runModal() == .OK, let url = panel.url {
+            // Extract attachment from email and save
+            Task {
+                await extractAndSave(to: url)
+            }
+        }
+    }
+
+    private func extractAndSave(to destinationURL: URL) async {
+        // Read the email file
+        guard let data = FileManager.default.contents(atPath: emailPath),
+              let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) else {
+            return
+        }
+
+        // Find this attachment in the MIME content and extract it
+        let attachmentData = extractAttachmentData(filename: attachment.filename, from: content)
+
+        if let attachmentData = attachmentData {
+            try? attachmentData.write(to: destinationURL)
+            NSWorkspace.shared.selectFile(destinationURL.path, inFileViewerRootedAtPath: "")
+        }
+    }
+
+    private func extractAttachmentData(filename: String, from content: String) -> Data? {
+        // Find the MIME part for this attachment
+        let lines = content.components(separatedBy: .newlines)
+        var inAttachment = false
+        var foundFilename = false
+        var base64Content = ""
+        var isBase64 = false
+
+        for i in 0..<lines.count {
+            let line = lines[i]
+            let lowerLine = line.lowercased()
+
+            if lowerLine.contains("content-disposition:") && lowerLine.contains("attachment") {
+                if line.contains(filename) || lines[safe: i + 1]?.contains(filename) == true {
+                    foundFilename = true
+                }
+            }
+
+            if foundFilename && lowerLine.contains("content-transfer-encoding:") && lowerLine.contains("base64") {
+                isBase64 = true
+            }
+
+            if foundFilename && isBase64 && line.isEmpty {
+                inAttachment = true
+                continue
+            }
+
+            if inAttachment {
+                if line.hasPrefix("--") {
+                    // End of MIME part
+                    break
+                }
+                base64Content += line
+            }
+        }
+
+        if !base64Content.isEmpty {
+            return Data(base64Encoded: base64Content, options: .ignoreUnknownCharacters)
+        }
+
+        return nil
+    }
+}
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
 }
 
 // MARK: - Email File Info
