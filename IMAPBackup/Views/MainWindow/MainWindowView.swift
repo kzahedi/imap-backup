@@ -68,6 +68,12 @@ struct MainWindowView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button(action: {
+                    openWindow(id: "browser")
+                }) {
+                    Label("Browse", systemImage: "tray.full")
+                }
+
+                Button(action: {
                     openWindow(id: "search")
                 }) {
                     Label("Search", systemImage: "magnifyingglass")

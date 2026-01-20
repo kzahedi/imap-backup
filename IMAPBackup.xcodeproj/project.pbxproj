@@ -53,6 +53,14 @@
 		D10000010000000000000001 /* IMAPBackupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000020000000000000001 /* IMAPBackupUITests.swift */; };
 		D10000010000000000000002 /* IMAPBackupUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000020000000000000002 /* IMAPBackupUITestsLaunchTests.swift */; };
 		B10000010000000000000030 /* OAuthSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000030 /* OAuthSecrets.swift */; };
+		A5C49FDF0FB7BEFC04C42FDC /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD31F4D5DDBCC3088FC09AC /* GeneralSettingsView.swift */; };
+		9558083E7FEEFE8839C88ACB /* ScheduleSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E867E4B2BB2462F771354F /* ScheduleSettingsView.swift */; };
+		77E6542ABE787A4CA809F103 /* AccountsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDFBEB4722068BE562B213B /* AccountsSettingsView.swift */; };
+		A4D9B07D2516DD51367F1E28 /* RetentionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C43F1BB8BCA0595EDFC82 /* RetentionSettingsView.swift */; };
+		0314A4B6E85CA711B8568572 /* VerificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50FC328E7388D668CBE759FC /* VerificationSettingsView.swift */; };
+		F9E8FD037E60CE5FA488B67B /* RateLimitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C6AAA988FB032F7C94C8F5B /* RateLimitSettingsView.swift */; };
+		AD90F875EB51CCFD9F4A6793 /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F2C906D71CAEF195425565F /* AdvancedSettingsView.swift */; };
+		1D3DB81103CEBB3319C6A1FD /* EmailBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2812E05FE0633CC157F47DC5 /* EmailBrowserView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -124,6 +132,14 @@
 		D10000020000000000000001 /* IMAPBackupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMAPBackupUITests.swift; sourceTree = "<group>"; };
 		D10000020000000000000002 /* IMAPBackupUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMAPBackupUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		D10000030000000000000002 /* IMAPBackupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IMAPBackupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3DD31F4D5DDBCC3088FC09AC /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
+		05E867E4B2BB2462F771354F /* ScheduleSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleSettingsView.swift; sourceTree = "<group>"; };
+		3DDFBEB4722068BE562B213B /* AccountsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSettingsView.swift; sourceTree = "<group>"; };
+		223C43F1BB8BCA0595EDFC82 /* RetentionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetentionSettingsView.swift; sourceTree = "<group>"; };
+		50FC328E7388D668CBE759FC /* VerificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationSettingsView.swift; sourceTree = "<group>"; };
+		2C6AAA988FB032F7C94C8F5B /* RateLimitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateLimitSettingsView.swift; sourceTree = "<group>"; };
+		4F2C906D71CAEF195425565F /* AdvancedSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingsView.swift; sourceTree = "<group>"; };
+		2812E05FE0633CC157F47DC5 /* EmailBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailBrowserView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -256,6 +272,8 @@
 		B10000050000000000000007 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				626DEA75BBB79811F7AACE1F /* EmailBrowser */,
+				A2790641BE2804184B26CE5F /* Settings */,
 				B1000002000000000000000B /* MenubarView.swift */,
 				B10000020000000000000014 /* SearchView.swift */,
 				B10000050000000000000009 /* MainWindow */,
@@ -327,6 +345,28 @@
 				D10000020000000000000002 /* IMAPBackupUITestsLaunchTests.swift */,
 			);
 			path = IMAPBackupUITests;
+			sourceTree = "<group>";
+		};
+		A2790641BE2804184B26CE5F /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				3DD31F4D5DDBCC3088FC09AC /* GeneralSettingsView.swift */,
+				05E867E4B2BB2462F771354F /* ScheduleSettingsView.swift */,
+				3DDFBEB4722068BE562B213B /* AccountsSettingsView.swift */,
+				223C43F1BB8BCA0595EDFC82 /* RetentionSettingsView.swift */,
+				50FC328E7388D668CBE759FC /* VerificationSettingsView.swift */,
+				2C6AAA988FB032F7C94C8F5B /* RateLimitSettingsView.swift */,
+				4F2C906D71CAEF195425565F /* AdvancedSettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		626DEA75BBB79811F7AACE1F /* EmailBrowser */ = {
+			isa = PBXGroup;
+			children = (
+				2812E05FE0633CC157F47DC5 /* EmailBrowserView.swift */,
+			);
+			path = EmailBrowser;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -466,6 +506,14 @@
 				B10000010000000000000020 /* GoogleOAuthService.swift in Sources */,
 				B10000010000000000000021 /* MigrationService.swift in Sources */,
 				B10000010000000000000030 /* OAuthSecrets.swift in Sources */,
+				A5C49FDF0FB7BEFC04C42FDC /* GeneralSettingsView.swift in Sources */,
+				9558083E7FEEFE8839C88ACB /* ScheduleSettingsView.swift in Sources */,
+				77E6542ABE787A4CA809F103 /* AccountsSettingsView.swift in Sources */,
+				A4D9B07D2516DD51367F1E28 /* RetentionSettingsView.swift in Sources */,
+				0314A4B6E85CA711B8568572 /* VerificationSettingsView.swift in Sources */,
+				F9E8FD037E60CE5FA488B67B /* RateLimitSettingsView.swift in Sources */,
+				AD90F875EB51CCFD9F4A6793 /* AdvancedSettingsView.swift in Sources */,
+				1D3DB81103CEBB3319C6A1FD /* EmailBrowserView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -19,6 +19,7 @@ A native macOS menubar app for backing up emails from IMAP servers. Keep your em
 - **Multi-account support** - Gmail, IONOS, and custom IMAP servers
 - **Full mailbox sync** - Downloads all emails, not just unread
 - **Incremental backups** - Only downloads new emails on subsequent runs
+- **Moved email detection** - Detects emails moved between folders using content hashing
 - **Parallel downloads** - Download multiple emails concurrently for speed
 - **Folder hierarchy preservation** - Mirrors your email folder structure
 - **Human-readable filenames** - `YYYYMMDD_HHMMSS_sender.eml` format
@@ -131,14 +132,21 @@ Search across all backed up emails with full-text search:
 
 1. Press **⌘F** or click **Search** in the toolbar
 2. Enter your search query
-3. Results show matching emails with highlighted snippets
-4. Double-click to open the email file in your default email client
+3. Use filters to narrow results by account, folder, date range, or search scope
+4. Results show matching emails with highlighted snippets
+5. Double-click to open the email file in your default email client
 
 Search looks through:
 - Sender names and email addresses
 - Email subjects
 - Email body (plain text and HTML)
 - Attachment filenames
+
+Filter options:
+- **Search scope** - All fields, subject only, sender, recipient, body, or attachments
+- **Account filter** - Limit to specific email accounts
+- **Folder filter** - Limit to specific mailbox folders
+- **Date range** - Filter by start and/or end date
 
 ### Attachment Extraction
 

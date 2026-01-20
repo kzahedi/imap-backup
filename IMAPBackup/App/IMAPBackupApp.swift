@@ -39,6 +39,13 @@ struct IMAPBackupApp: App {
         .defaultSize(width: 700, height: 500)
         .keyboardShortcut("f", modifiers: [.command, .shift])
 
+        // Email browser window
+        Window("Email Browser", id: "browser") {
+            EmailBrowserView()
+                .environmentObject(backupManager)
+        }
+        .defaultSize(width: 1000, height: 700)
+
         // Menubar
         MenuBarExtra {
             MenubarView()
