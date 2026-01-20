@@ -51,6 +51,7 @@
 		C1000001000000000000000A /* IMAPIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000002000000000000000A /* IMAPIntegrationTests.swift */; };
 		D10000010000000000000001 /* IMAPBackupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000020000000000000001 /* IMAPBackupUITests.swift */; };
 		D10000010000000000000002 /* IMAPBackupUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000020000000000000002 /* IMAPBackupUITestsLaunchTests.swift */; };
+		B10000010000000000000030 /* OAuthSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000030 /* OAuthSecrets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -87,6 +88,7 @@
 		B1000002000000000000000D /* AddAccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountView.swift; sourceTree = "<group>"; };
 		B1000002000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B1000002000000000000000F /* IMAPBackup.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IMAPBackup.entitlements; sourceTree = "<group>"; };
+		B10000020000000000000030 /* OAuthSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthSecrets.swift; sourceTree = "<group>"; };
 		B10000020000000000000010 /* EmailParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailParser.swift; sourceTree = "<group>"; };
 		B10000020000000000000011 /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
 		B10000020000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -265,6 +267,7 @@
 				B1000002000000000000000E /* Info.plist */,
 				B1000002000000000000000F /* IMAPBackup.entitlements */,
 				B10000020000000000000012 /* Assets.xcassets */,
+				B10000020000000000000030 /* OAuthSecrets.swift */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -458,6 +461,7 @@
 				B1000001000000000000001F /* VerificationService.swift in Sources */,
 				B10000010000000000000020 /* GoogleOAuthService.swift in Sources */,
 				B10000010000000000000021 /* MigrationService.swift in Sources */,
+				B10000010000000000000030 /* OAuthSecrets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

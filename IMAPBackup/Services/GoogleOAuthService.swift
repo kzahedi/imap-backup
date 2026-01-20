@@ -28,8 +28,9 @@ final class GoogleOAuthService: NSObject {
         let clientId: String
         let redirectUri: String
 
-        /// Bundled default Client ID - users don't need to configure anything
-        static let defaultClientId = "1079034013731-bvfhnmdehe1925sk8uitu34rbu1gh81g.apps.googleusercontent.com"
+        /// Bundled default credentials from OAuthSecrets.swift (gitignored)
+        static let defaultClientId = OAuthSecrets.googleClientId
+        static let defaultClientSecret = OAuthSecrets.googleClientSecret
 
         /// Google's OAuth2 endpoints
         static let authorizationEndpoint = "https://accounts.google.com/o/oauth2/auth"
@@ -132,6 +133,7 @@ final class GoogleOAuthService: NSObject {
 
         let body = [
             "client_id": config.clientId,
+            "client_secret": Configuration.defaultClientSecret,
             "refresh_token": refreshToken,
             "grant_type": "refresh_token"
         ]
@@ -274,6 +276,7 @@ final class GoogleOAuthService: NSObject {
 
         var body = [
             "client_id": config.clientId,
+            "client_secret": Configuration.defaultClientSecret,
             "code": code,
             "redirect_uri": config.redirectUri,
             "grant_type": "authorization_code"

@@ -31,3 +31,6 @@ Backups/
 .env
 credentials.json
 .tmp/
+
+# OAuth secrets - do not commit
+IMAPBackup/Resources/OAuthSecrets.swift
