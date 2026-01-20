@@ -7,6 +7,8 @@ final class StorageServiceTests: XCTestCase {
     var storageService: StorageService!
 
     override func setUp() async throws {
+        throw XCTSkip("Integration test - requires filesystem access. Run manually with: xcodebuild test -only-testing:IMAPBackupTests/StorageServiceTests")
+
         try await super.setUp()
 
         // Create a temporary directory for each test

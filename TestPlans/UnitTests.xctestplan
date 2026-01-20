@@ -1,0 +1,27 @@
+{
+  "configurations" : [
+    {
+      "id" : "4A5B6C7D-8E9F-0A1B-2C3D-4E5F6A7B8C9D",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "skippedTests" : [
+        "IMAPIntegrationTests"
+      ],
+      "target" : {
+        "containerPath" : "container:IMAPBackup.xcodeproj",
+        "identifier" : "IMAPBackupTests",
+        "name" : "IMAPBackupTests"
+      }
+    }
+  ],
+  "version" : 1
+}
