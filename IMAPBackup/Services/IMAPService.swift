@@ -138,7 +138,7 @@ actor IMAPService {
         }
 
         reconnectAttempts += 1
-        let delay = UInt64(pow(2.0, Double(reconnectAttempts - 1))) * 1_000_000_000
+        let delay = UInt64(pow(2.0, Double(reconnectAttempts - 1))) * Constants.nanosecondsPerSecond
         logInfo("Attempting reconnect (attempt \(reconnectAttempts)/\(maxReconnectAttempts)) after \(reconnectAttempts)s delay")
 
         try await Task.sleep(nanoseconds: delay)
@@ -525,8 +525,8 @@ actor IMAPService {
                 }
             }
 
-            // Safety check - don't accumulate more than 50MB
-            if allData.count > 50 * 1024 * 1024 {
+            // Safety check - don't accumulate more than maxEmailSizeBytes
+            if allData.count > Constants.maxEmailSizeBytes {
                 throw IMAPError.receiveFailed("Response too large")
             }
         }

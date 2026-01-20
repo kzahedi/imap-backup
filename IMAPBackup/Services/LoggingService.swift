@@ -27,8 +27,8 @@ actor LoggingService {
     static let shared = LoggingService()
 
     private let fileManager = FileManager.default
-    private let maxLogSize: Int64 = 10 * 1024 * 1024  // 10 MB
-    private let maxLogFiles = 5
+    private let maxLogSize: Int64 = Constants.maxLogFileSizeBytes
+    private let maxLogFiles = Constants.maxLogFileCount
     private var logFileHandle: FileHandle?
     private let dateFormatter: DateFormatter
     private let osLog = OSLog(subsystem: "com.kzahedi.IMAPBackup", category: "app")

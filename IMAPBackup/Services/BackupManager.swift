@@ -111,8 +111,7 @@ class BackupManager: ObservableObject {
     @Published var nextScheduledBackup: Date?
 
     /// Threshold above which emails are streamed directly to disk (in bytes)
-    /// Default: 10 MB
-    @Published var streamingThresholdBytes: Int = 10 * 1024 * 1024
+    @Published var streamingThresholdBytes: Int = Constants.defaultStreamingThresholdBytes
 
     /// Accounts that are missing passwords (e.g., after migration)
     @Published var accountsWithMissingPasswords: [EmailAccount] = []
@@ -855,9 +854,9 @@ class BackupManager: ObservableObject {
 
                 } catch {
                     lastError = error
-                    if attempt < 3 {
+                    if attempt < Constants.maxRetryAttempts {
                         // Exponential backoff: 1s, 2s, 4s
-                        let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
+                        let delay = UInt64(pow(2.0, Double(attempt - 1))) * Constants.nanosecondsPerSecond
                         try? await Task.sleep(nanoseconds: delay)
                     }
                 }

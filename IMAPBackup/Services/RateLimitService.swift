@@ -63,7 +63,7 @@ actor ThrottleTracker {
 
             if remainingDelay > 0 {
                 do {
-                    try await Task.sleep(nanoseconds: UInt64(remainingDelay * 1_000_000))
+                    try await Task.sleep(nanoseconds: UInt64(remainingDelay) * Constants.nanosecondsPerMillisecond)
                 } catch {
                     // Task cancelled, just continue
                 }

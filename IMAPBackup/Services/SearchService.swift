@@ -106,8 +106,8 @@ actor SearchService {
 
     // MARK: - Private Methods
 
-    /// Maximum header size to read (32KB should be plenty for headers)
-    private let maxHeaderSize = 32 * 1024
+    /// Maximum header size to read for search optimization
+    private let maxHeaderSize = Constants.maxHeaderSizeForSearch
 
     private func searchEmailFile(url: URL, searchTerms: [String]) -> SearchResult? {
         // Step 1: Read only headers first (memory efficient)
