@@ -4,12 +4,10 @@ struct AccountRowView: View {
     @EnvironmentObject var backupManager: BackupManager
     let account: EmailAccount
 
+    @State private var stats: BackupManager.AccountStats = BackupManager.AccountStats()
+
     var progress: BackupProgress? {
         backupManager.progress[account.id]
-    }
-
-    var stats: BackupManager.AccountStats {
-        backupManager.getStats(for: account)
     }
 
     var body: some View {
@@ -55,6 +53,10 @@ struct AccountRowView: View {
         }
         .padding(.vertical, 4)
         .opacity(account.isEnabled ? 1.0 : 0.5)
+        .task(id: account.id) {
+            // Load stats asynchronously to avoid blocking UI
+            stats = await backupManager.getStats(for: account)
+        }
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

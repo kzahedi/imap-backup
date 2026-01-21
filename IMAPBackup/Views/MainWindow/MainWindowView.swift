@@ -311,9 +311,8 @@ struct StatsSection: View {
     @EnvironmentObject var backupManager: BackupManager
     let account: EmailAccount
 
-    var stats: BackupManager.AccountStats {
-        backupManager.getStats(for: account)
-    }
+    @State private var stats: BackupManager.AccountStats = BackupManager.AccountStats()
+    @State private var isLoading = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -325,25 +324,25 @@ struct StatsSection: View {
                 StatCard(
                     icon: "envelope.fill",
                     title: "Emails",
-                    value: "\(stats.totalEmails)",
+                    value: isLoading ? "..." : "\(stats.totalEmails)",
                     color: .blue
                 )
                 StatCard(
                     icon: "internaldrive.fill",
                     title: "Size",
-                    value: formatBytes(stats.totalSize),
+                    value: isLoading ? "..." : formatBytes(stats.totalSize),
                     color: .green
                 )
                 StatCard(
                     icon: "folder.fill",
                     title: "Folders",
-                    value: "\(stats.folderCount)",
+                    value: isLoading ? "..." : "\(stats.folderCount)",
                     color: .orange
                 )
             }
 
             // Date range
-            if let oldest = stats.oldestEmail, let newest = stats.newestEmail {
+            if !isLoading, let oldest = stats.oldestEmail, let newest = stats.newestEmail {
                 HStack {
                     Image(systemName: "calendar")
                         .foregroundStyle(.secondary)
@@ -380,6 +379,12 @@ struct StatsSection: View {
                     }
                 }
             }
+        }
+        .task(id: account.id) {
+            // Load stats asynchronously to avoid blocking UI
+            isLoading = true
+            stats = await backupManager.getStats(for: account)
+            isLoading = false
         }
     }
 

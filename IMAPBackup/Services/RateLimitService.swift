@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// Rate limit configuration for an account
 struct RateLimitSettings: Codable, Hashable {
@@ -121,14 +122,29 @@ actor ThrottleTracker {
     }
 }
 
+/// Notification sent when rate limit settings change
+struct RateLimitSettingsChange {
+    /// The account ID affected, or nil for global settings
+    let accountId: UUID?
+    /// The new settings
+    let settings: RateLimitSettings
+}
+
 /// Service for managing rate limits across accounts
 @MainActor
 class RateLimitService: ObservableObject {
     static let shared = RateLimitService()
 
+    /// Publisher for settings changes - BackupManager can observe this
+    let settingsDidChange = PassthroughSubject<RateLimitSettingsChange, Never>()
+
     /// Global default settings
     @Published var globalSettings: RateLimitSettings {
-        didSet { saveSettings() }
+        didSet {
+            saveSettings()
+            // Notify observers of global settings change
+            settingsDidChange.send(RateLimitSettingsChange(accountId: nil, settings: globalSettings))
+        }
     }
 
     /// Per-account settings (keyed by account ID)
@@ -178,6 +194,8 @@ class RateLimitService: ObservableObject {
     /// Set account-specific settings
     func setSettings(_ settings: RateLimitSettings, for accountId: UUID) {
         accountSettings[accountId] = settings
+        // Notify observers of account-specific settings change
+        settingsDidChange.send(RateLimitSettingsChange(accountId: accountId, settings: settings))
     }
 
     /// Remove account-specific settings (use global)

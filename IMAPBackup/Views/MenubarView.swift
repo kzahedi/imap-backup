@@ -4,9 +4,7 @@ struct MenubarView: View {
     @EnvironmentObject var backupManager: BackupManager
     @Environment(\.openWindow) private var openWindow
 
-    var globalStats: BackupManager.GlobalStats {
-        backupManager.getGlobalStats()
-    }
+    @State private var globalStats: BackupManager.GlobalStats = BackupManager.GlobalStats()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -173,6 +171,10 @@ struct MenubarView: View {
         }
         .padding()
         .frame(width: 280)
+        .task {
+            // Load stats asynchronously to avoid blocking UI
+            globalStats = await backupManager.getGlobalStats()
+        }
     }
 
     func calculateTotalProgress() -> Double {

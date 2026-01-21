@@ -96,6 +96,13 @@ actor IMAPService {
         }
     }
 
+    /// Update rate limit settings on a running service
+    /// This allows settings changes to take effect immediately without restarting the backup
+    func updateRateLimitSettings(_ settings: RateLimitSettings) async {
+        self.rateLimitSettings = settings
+        await self.throttleTracker?.updateSettings(settings)
+    }
+
     /// Get or create throttle tracker
     private func getThrottleTracker() -> ThrottleTracker {
         if let tracker = throttleTracker {
@@ -392,8 +399,15 @@ actor IMAPService {
     }
 
     func fetchEmail(uid: UInt32) async throws -> Data {
+        // Apply rate limiting before request
+        await applyRateLimit()
+
         // Must use binary-safe fetch for emails with attachments
-        return try await fetchEmailWithLiteralParsing(uid: uid)
+        let result = try await fetchEmailWithLiteralParsing(uid: uid)
+
+        // Record success for adaptive rate limiting
+        await recordSuccess()
+        return result
     }
 
     /// Fetch email with proper IMAP literal parsing
@@ -537,13 +551,27 @@ actor IMAPService {
 
     /// Fetch email size without downloading the full body
     func fetchEmailSize(uid: UInt32) async throws -> Int {
+        // Apply rate limiting before request
+        await applyRateLimit()
+
         let response = try await sendCommand("UID FETCH \(uid) RFC822.SIZE")
-        return extractEmailSize(from: response)
+        let size = extractEmailSize(from: response)
+
+        // Record success for adaptive rate limiting
+        await recordSuccess()
+        return size
     }
 
     /// Stream email directly to file for large messages
     func streamEmailToFile(uid: UInt32, destinationURL: URL) async throws -> Int64 {
-        try await performStreamingFetch(uid: uid, destinationURL: destinationURL)
+        // Apply rate limiting before request
+        await applyRateLimit()
+
+        let result = try await performStreamingFetch(uid: uid, destinationURL: destinationURL)
+
+        // Record success for adaptive rate limiting
+        await recordSuccess()
+        return result
     }
 
     /// Perform streaming fetch directly to disk
@@ -665,8 +693,15 @@ actor IMAPService {
     }
 
     func searchAll() async throws -> [UInt32] {
+        // Apply rate limiting before request
+        await applyRateLimit()
+
         let response = try await sendCommand("UID SEARCH ALL")
-        return parseSearchResponse(response)
+        let uids = parseSearchResponse(response)
+
+        // Record success for adaptive rate limiting
+        await recordSuccess()
+        return uids
     }
 
     // MARK: - Low-level Communication

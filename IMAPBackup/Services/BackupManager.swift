@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 /// Days of the week for scheduling
 enum Weekday: Int, Codable, CaseIterable, Identifiable {
@@ -118,7 +119,32 @@ class BackupManager: ObservableObject {
 
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
     private var activeHistoryIds: [UUID: UUID] = [:]  // Account ID -> History Entry ID
+    private var activeIMAPServices: [UUID: IMAPService] = [:]  // Account ID -> Active IMAP Service
+    private var cancellables = Set<AnyCancellable>()
     private var scheduleTimer: Timer?
+
+    // MARK: - Progress Throttling
+    /// Pending progress updates to be flushed to UI
+    private var pendingProgressUpdates: [UUID: BackupProgress] = [:]
+    /// Task that handles throttled progress flushing
+    private var progressFlushTask: Task<Void, Never>?
+    /// Interval for progress UI updates (150ms)
+    private let progressUpdateInterval: UInt64 = 150_000_000  // nanoseconds
+    /// Track last subject update time for each account
+    private var lastSubjectUpdateTime: [UUID: Date] = [:]
+    /// Track email count at last subject update for each account
+    private var lastSubjectUpdateCount: [UUID: Int] = [:]
+
+    // MARK: - Stats Caching
+    /// Cache entry for account stats
+    private struct StatsCacheEntry {
+        let stats: AccountStats
+        let timestamp: Date
+    }
+    /// Cache for account stats with 5-second TTL
+    private var statsCache: [UUID: StatsCacheEntry] = [:]
+    /// TTL for stats cache entries (5 seconds)
+    private let statsCacheTTL: TimeInterval = 5.0
     private let accountsKey = "EmailAccounts"
     private let scheduleKey = "BackupSchedule"
     private let scheduleTimeKey = "BackupScheduleTime"
@@ -163,6 +189,41 @@ class BackupManager: ObservableObject {
 
         // Check for accounts missing passwords (e.g., after migration)
         checkForMissingPasswords()
+
+        // Subscribe to rate limit settings changes for real-time propagation
+        subscribeToRateLimitChanges()
+    }
+
+    /// Subscribe to rate limit settings changes and propagate to active IMAP services
+    private func subscribeToRateLimitChanges() {
+        RateLimitService.shared.settingsDidChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] change in
+                Task { @MainActor in
+                    await self?.handleRateLimitSettingsChange(change)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Handle rate limit settings changes by propagating to active IMAP services
+    private func handleRateLimitSettingsChange(_ change: RateLimitSettingsChange) async {
+        if let accountId = change.accountId {
+            // Account-specific settings changed - update that account's IMAP service
+            if let imapService = activeIMAPServices[accountId] {
+                await imapService.updateRateLimitSettings(change.settings)
+                logInfo("Updated rate limit settings for account \(accountId)")
+            }
+        } else {
+            // Global settings changed - update all accounts that use global settings
+            for (accountId, imapService) in activeIMAPServices {
+                // Only update if the account doesn't have custom settings
+                if !RateLimitService.shared.hasCustomSettings(for: accountId) {
+                    await imapService.updateRateLimitSettings(change.settings)
+                }
+            }
+            logInfo("Updated global rate limit settings for \(activeIMAPServices.count) active service(s)")
+        }
     }
 
     // MARK: - Password Management
@@ -472,7 +533,8 @@ class BackupManager: ObservableObject {
     func cancelBackup(for accountId: UUID) {
         activeTasks[accountId]?.cancel()
         activeTasks.removeValue(forKey: accountId)
-        updateProgress(for: accountId) { $0.status = .cancelled }
+        activeIMAPServices.removeValue(forKey: accountId)
+        updateProgressImmediate(for: accountId) { $0.status = .cancelled }
 
         // Mark history entry as cancelled
         if let historyId = activeHistoryIds[accountId] {
@@ -486,7 +548,7 @@ class BackupManager: ObservableObject {
     func cancelAllBackups() {
         for (id, task) in activeTasks {
             task.cancel()
-            updateProgress(for: id) { $0.status = .cancelled }
+            updateProgressImmediate(for: id) { $0.status = .cancelled }
 
             // Mark history entry as cancelled
             if let historyId = activeHistoryIds[id] {
@@ -495,6 +557,7 @@ class BackupManager: ObservableObject {
         }
         activeTasks.removeAll()
         activeHistoryIds.removeAll()
+        activeIMAPServices.removeAll()
         isBackingUp = false
     }
 
@@ -546,6 +609,9 @@ class BackupManager: ObservableObject {
         let sharedTracker = RateLimitService.shared.getTracker(forServer: account.imapServer, accountId: account.id)
         await imapService.configureRateLimit(settings: rateLimitSettings, sharedTracker: sharedTracker)
 
+        // Track active IMAP service for real-time settings propagation
+        activeIMAPServices[account.id] = imapService
+
         // Start history entry
         let historyId = BackupHistoryService.shared.startEntry(for: account.email)
         activeHistoryIds[account.id] = historyId
@@ -554,13 +620,13 @@ class BackupManager: ObservableObject {
 
         do {
             // Connect
-            updateProgress(for: account.id) { $0.status = .connecting }
+            updateProgressImmediate(for: account.id) { $0.status = .connecting }
             try await imapService.connect()
             try await imapService.login()
             logInfo("Connected and authenticated to \(account.imapServer)")
 
             // Fetch folders
-            updateProgress(for: account.id) { $0.status = .fetchingFolders }
+            updateProgressImmediate(for: account.id) { $0.status = .fetchingFolders }
             let folders = try await imapService.listFolders()
             let selectableFolders = folders.filter { $0.isSelectable }
 
@@ -569,7 +635,7 @@ class BackupManager: ObservableObject {
             }
 
             // Phase 1: Count all emails that need to be downloaded
-            updateProgress(for: account.id) { $0.status = .counting }
+            updateProgressImmediate(for: account.id) { $0.status = .counting }
             var folderNewUIDs: [(IMAPFolder, [UInt32])] = []
             var totalNewEmails = 0
 
@@ -619,7 +685,7 @@ class BackupManager: ObservableObject {
             }
 
             // Complete
-            updateProgress(for: account.id) {
+            updateProgressImmediate(for: account.id) {
                 $0.status = .completed
                 $0.processedFolders = folderNewUIDs.count
             }
@@ -628,6 +694,9 @@ class BackupManager: ObservableObject {
             var updatedAccount = account
             updatedAccount.lastBackupDate = Date()
             updateAccount(updatedAccount)
+
+            // Invalidate stats cache since backup added new emails
+            invalidateStatsCache(for: account.id)
 
             try await imapService.logout()
 
@@ -662,7 +731,7 @@ class BackupManager: ObservableObject {
         } catch {
             logError("Backup failed for \(account.email): \(error.localizedDescription)")
 
-            updateProgress(for: account.id) {
+            updateProgressImmediate(for: account.id) {
                 $0.status = .failed
                 $0.errors.append(BackupError(message: error.localizedDescription))
             }
@@ -680,6 +749,7 @@ class BackupManager: ObservableObject {
 
         activeTasks.removeValue(forKey: account.id)
         activeHistoryIds.removeValue(forKey: account.id)
+        activeIMAPServices.removeValue(forKey: account.id)
         updateIsBackingUp()
 
         // Check if all backups are complete for summary notification
@@ -724,7 +794,7 @@ class BackupManager: ObservableObject {
         // Re-select folder (may have been deselected during counting phase)
         _ = try await imapService.selectFolder(folder.name)
 
-        updateProgress(for: account.id) { $0.status = .downloading }
+        updateProgressImmediate(for: account.id) { $0.status = .downloading }
 
         for uid in uids {
             guard !Task.isCancelled else { break }
@@ -870,10 +940,16 @@ class BackupManager: ObservableObject {
                         }
                     }
 
+                    // Get current count to check if we should update subject
+                    let currentDownloaded = (pendingProgressUpdates[account.id]?.downloadedEmails ?? progress[account.id]?.downloadedEmails ?? 0) + 1
+
                     updateProgress(for: account.id) {
                         $0.downloadedEmails += 1
                         $0.bytesDownloaded += bytesDownloaded
-                        $0.currentEmailSubject = parsed?.subject ?? "(No Subject)"
+                        // Only update subject every 10 emails or 500ms to reduce UI updates
+                        if self.shouldUpdateSubject(for: account.id, currentCount: currentDownloaded) {
+                            $0.currentEmailSubject = parsed?.subject ?? "(No Subject)"
+                        }
                     }
 
                     lastError = nil
@@ -943,11 +1019,68 @@ class BackupManager: ObservableObject {
         }
     }
 
+    /// Update progress with throttling to prevent UI flooding
+    /// Updates are accumulated and flushed to UI every 150ms
     private func updateProgress(for accountId: UUID, update: (inout BackupProgress) -> Void) {
+        // Get current progress (from pending or published)
+        var current = pendingProgressUpdates[accountId] ?? progress[accountId] ?? BackupProgress(accountId: accountId)
+        update(&current)
+        pendingProgressUpdates[accountId] = current
+
+        // Start flush task if not already running
+        if progressFlushTask == nil {
+            progressFlushTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: self?.progressUpdateInterval ?? 150_000_000)
+                await self?.flushProgressUpdates()
+            }
+        }
+    }
+
+    /// Flush pending progress updates to the published property
+    private func flushProgressUpdates() {
+        for (accountId, pendingProgress) in pendingProgressUpdates {
+            progress[accountId] = pendingProgress
+        }
+        pendingProgressUpdates.removeAll()
+        progressFlushTask = nil
+    }
+
+    /// Update progress immediately without throttling (for status changes)
+    private func updateProgressImmediate(for accountId: UUID, update: (inout BackupProgress) -> Void) {
         if var current = progress[accountId] {
             update(&current)
             progress[accountId] = current
+            // Also update pending to keep in sync
+            pendingProgressUpdates[accountId] = current
         }
+    }
+
+    /// Check if subject should be updated (every 10 emails or every 500ms)
+    private func shouldUpdateSubject(for accountId: UUID, currentCount: Int) -> Bool {
+        let now = Date()
+
+        // Check time-based threshold (500ms)
+        if let lastTime = lastSubjectUpdateTime[accountId] {
+            if now.timeIntervalSince(lastTime) >= 0.5 {
+                lastSubjectUpdateTime[accountId] = now
+                lastSubjectUpdateCount[accountId] = currentCount
+                return true
+            }
+        } else {
+            lastSubjectUpdateTime[accountId] = now
+            lastSubjectUpdateCount[accountId] = currentCount
+            return true
+        }
+
+        // Check count-based threshold (every 10 emails)
+        let lastCount = lastSubjectUpdateCount[accountId] ?? 0
+        if currentCount - lastCount >= 10 {
+            lastSubjectUpdateTime[accountId] = now
+            lastSubjectUpdateCount[accountId] = currentCount
+            return true
+        }
+
+        return false
     }
 
     // MARK: - Backup Location
@@ -1024,17 +1157,65 @@ class BackupManager: ObservableObject {
         var accountCount: Int = 0
     }
 
-    func getStats(for account: EmailAccount) -> AccountStats {
+    /// Get stats for an account with caching (5-second TTL)
+    /// Runs file enumeration on a background thread to avoid blocking UI
+    func getStats(for account: EmailAccount) async -> AccountStats {
+        // Check cache first
+        if let cached = statsCache[account.id],
+           Date().timeIntervalSince(cached.timestamp) < statsCacheTTL {
+            return cached.stats
+        }
+
+        // Run file enumeration on background thread
         let accountDir = backupLocation.appendingPathComponent(account.email.sanitizedForFilename())
-        return calculateStats(at: accountDir)
+        let stats = await Task.detached(priority: .utility) {
+            return BackupManager.calculateStatsAtDirectory(accountDir)
+        }.value
+
+        // Cache the result
+        statsCache[account.id] = StatsCacheEntry(stats: stats, timestamp: Date())
+        return stats
     }
 
-    func getGlobalStats() -> GlobalStats {
+    /// Get stats synchronously (legacy method for backward compatibility)
+    /// Prefer using async getStats(for:) instead
+    func getStatsSync(for account: EmailAccount) -> AccountStats {
+        let accountDir = backupLocation.appendingPathComponent(account.email.sanitizedForFilename())
+        return BackupManager.calculateStatsAtDirectory(accountDir)
+    }
+
+    /// Get global stats with caching
+    /// Runs file enumeration on background threads to avoid blocking UI
+    func getGlobalStats() async -> GlobalStats {
+        var global = GlobalStats()
+        global.accountCount = accounts.count
+
+        // Fetch all account stats concurrently
+        await withTaskGroup(of: AccountStats.self) { group in
+            for account in accounts {
+                group.addTask {
+                    await self.getStats(for: account)
+                }
+            }
+
+            for await stats in group {
+                global.totalEmails += stats.totalEmails
+                global.totalSize += stats.totalSize
+            }
+        }
+
+        return global
+    }
+
+    /// Get global stats synchronously (legacy method for backward compatibility)
+    /// Prefer using async getGlobalStats() instead
+    func getGlobalStatsSync() -> GlobalStats {
         var global = GlobalStats()
         global.accountCount = accounts.count
 
         for account in accounts {
-            let stats = getStats(for: account)
+            let accountDir = backupLocation.appendingPathComponent(account.email.sanitizedForFilename())
+            let stats = BackupManager.calculateStatsAtDirectory(accountDir)
             global.totalEmails += stats.totalEmails
             global.totalSize += stats.totalSize
         }
@@ -1042,7 +1223,18 @@ class BackupManager: ObservableObject {
         return global
     }
 
-    private func calculateStats(at directory: URL) -> AccountStats {
+    /// Invalidate stats cache for an account (call after backup completes)
+    func invalidateStatsCache(for accountId: UUID) {
+        statsCache.removeValue(forKey: accountId)
+    }
+
+    /// Invalidate all stats cache entries
+    func invalidateAllStatsCache() {
+        statsCache.removeAll()
+    }
+
+    /// Calculate stats at a directory (nonisolated static to allow calling from detached tasks)
+    private nonisolated static func calculateStatsAtDirectory(_ directory: URL) -> AccountStats {
         var stats = AccountStats()
         let fileManager = FileManager.default
 
@@ -1086,7 +1278,7 @@ class BackupManager: ObservableObject {
         return stats
     }
 
-    private func parseDateFromFilename(_ filename: String) -> Date? {
+    private nonisolated static func parseDateFromFilename(_ filename: String) -> Date? {
         // Format: YYYYMMDD_HHMMSS_sender
         let parts = filename.components(separatedBy: "_")
         guard parts.count >= 2,
